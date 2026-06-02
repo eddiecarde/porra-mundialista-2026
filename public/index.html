@@ -1,0 +1,1166 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>⚽ Porra Mundialista 2026</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    /* ===== TOKENS ===== */
+    :root {
+      --gold:        #C9A84C;
+      --gold-light:  #E8C86B;
+      --gold-dim:    #7A6030;
+      --bg-deep:     #080E14;
+      --bg-mid:      #0D1820;
+      --bg-card:     #121F2C;
+      --bg-hover:    #18293A;
+      --border:      rgba(201,168,76,.18);
+      --border-gold: rgba(201,168,76,.55);
+      --text:        #E6EDF5;
+      --text-muted:  #6B8399;
+      --green:       #1DB954;
+      --red:         #E53E3E;
+      --blue:        #3B82F6;
+      --radius:      14px;
+      --radius-lg:   22px;
+      --shadow:      0 8px 32px rgba(0,0,0,.45);
+      --transition:  .2s cubic-bezier(.4,0,.2,1);
+    }
+
+    /* ===== RESET ===== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: var(--bg-deep);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ===== BACKGROUND PATTERN ===== */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        radial-gradient(ellipse 80% 60% at 20% 0%, rgba(201,168,76,.07) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 40% at 80% 100%, rgba(201,168,76,.05) 0%, transparent 50%),
+        url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23C9A84C' fill-opacity='0.025'%3E%3Cpolygon points='30,0 60,15 60,45 30,60 0,45 0,15'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ===== TOAST ===== */
+    #toast-container {
+      position: fixed; top: 24px; right: 24px;
+      z-index: 9999; display: flex; flex-direction: column; gap: 10px;
+    }
+    .toast {
+      display: flex; align-items: center; gap: 12px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-gold);
+      border-radius: var(--radius);
+      padding: 14px 18px;
+      font-size: .9rem;
+      font-weight: 500;
+      box-shadow: var(--shadow);
+      animation: slideIn .3s ease forwards;
+      min-width: 260px;
+    }
+    .toast.success { border-color: rgba(29,185,84,.5); }
+    .toast.error   { border-color: rgba(229,62,62,.5); }
+    .toast-icon    { font-size: 1.2rem; }
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateX(40px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+
+    /* ===== LOADER ===== */
+    #globalLoader {
+      position: fixed; inset: 0; background: var(--bg-deep);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 9998; transition: opacity .4s;
+    }
+    #globalLoader.hidden { opacity: 0; pointer-events: none; }
+    .loader-ring {
+      width: 56px; height: 56px; border-radius: 50%;
+      border: 3px solid var(--border);
+      border-top-color: var(--gold);
+      animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ===== LAYOUT ===== */
+    .app-shell { position: relative; z-index: 1; max-width: 1400px; margin: 0 auto; padding: 0 20px 60px; }
+
+    /* ===== TOPBAR ===== */
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 20px 0 16px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 32px;
+    }
+    .topbar-brand { display: flex; align-items: center; gap: 12px; }
+    .topbar-brand .trophy { font-size: 2rem; }
+    .brand-text h1 {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 1.8rem; letter-spacing: .08em;
+      color: var(--gold); line-height: 1;
+    }
+    .brand-text p { font-size: .75rem; color: var(--text-muted); letter-spacing: .12em; text-transform: uppercase; }
+    .topbar-right { display: flex; align-items: center; gap: 14px; }
+    .user-chip {
+      display: flex; align-items: center; gap: 8px;
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 50px; padding: 6px 14px 6px 10px; font-size: .875rem;
+    }
+    .user-chip .avatar {
+      width: 28px; height: 28px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--gold), var(--gold-dim));
+      display: flex; align-items: center; justify-content: center;
+      font-size: .75rem; font-weight: 700; color: var(--bg-deep);
+    }
+
+    /* ===== TABS ===== */
+    .tabs {
+      display: flex; gap: 4px; flex-wrap: wrap;
+      background: var(--bg-mid); border-radius: 12px;
+      padding: 5px; margin-bottom: 28px; width: fit-content;
+    }
+    .tab-btn {
+      padding: 9px 20px; border-radius: 9px; border: none; cursor: pointer;
+      font-family: 'DM Sans', sans-serif; font-size: .875rem; font-weight: 500;
+      color: var(--text-muted); background: transparent;
+      transition: var(--transition);
+    }
+    .tab-btn.active {
+      background: var(--bg-card); color: var(--gold);
+      box-shadow: 0 2px 10px rgba(0,0,0,.3);
+    }
+    .tab-btn:hover:not(.active) { color: var(--text); }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; animation: fadeUp .25s ease; }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ===== HERO STATS ===== */
+    .hero-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; margin-bottom: 32px; }
+    .stat-card {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); padding: 22px 24px;
+      position: relative; overflow: hidden; transition: var(--transition);
+    }
+    .stat-card::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, var(--gold), transparent);
+    }
+    .stat-card:hover { border-color: var(--border-gold); transform: translateY(-2px); }
+    .stat-icon  { font-size: 1.6rem; margin-bottom: 10px; display: block; }
+    .stat-value { font-family: 'Bebas Neue', sans-serif; font-size: 2.4rem; color: var(--gold); line-height: 1; }
+    .stat-label { font-size: .78rem; color: var(--text-muted); margin-top: 4px; text-transform: uppercase; letter-spacing: .08em; }
+
+    /* ===== LEADERBOARD ===== */
+    .leaderboard-list { display: flex; flex-direction: column; gap: 10px; }
+    .lb-item {
+      display: flex; align-items: center; gap: 16px;
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 14px 20px;
+      transition: var(--transition);
+    }
+    .lb-item:hover { border-color: var(--border-gold); background: var(--bg-hover); }
+    .lb-item.me { border-color: rgba(201,168,76,.4); background: rgba(201,168,76,.04); }
+    .lb-rank {
+      font-family: 'Bebas Neue', sans-serif; font-size: 1.5rem;
+      color: var(--text-muted); width: 32px; text-align: center; flex-shrink: 0;
+    }
+    .lb-rank.gold   { color: #FFD700; }
+    .lb-rank.silver { color: #C0C0C0; }
+    .lb-rank.bronze { color: #CD7F32; }
+    .lb-medal { font-size: 1.4rem; flex-shrink: 0; }
+    .lb-name  { flex: 1; font-weight: 600; font-size: .95rem; }
+    .lb-you   { font-size: .7rem; background: var(--gold); color: var(--bg-deep); border-radius: 4px; padding: 1px 6px; font-weight: 700; }
+    .lb-pts   { font-family: 'Bebas Neue', sans-serif; font-size: 1.8rem; color: var(--gold); }
+    .lb-pts-label { font-size: .7rem; color: var(--text-muted); text-align: right; }
+
+    /* ===== MATCH FILTER ===== */
+    .match-filters {
+      display: flex; gap: 8px; margin-bottom: 22px; flex-wrap: wrap; align-items: center;
+    }
+    .filter-btn {
+      padding: 7px 16px; border-radius: 50px; border: 1px solid var(--border);
+      background: transparent; color: var(--text-muted); cursor: pointer;
+      font-family: 'DM Sans', sans-serif; font-size: .82rem; font-weight: 500;
+      transition: var(--transition);
+    }
+    .filter-btn.active { border-color: var(--gold); color: var(--gold); background: rgba(201,168,76,.08); }
+    .filter-btn:hover:not(.active) { border-color: var(--border-gold); color: var(--text); }
+
+    /* ===== MATCHES GRID ===== */
+    .matches-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 18px; }
+    .match-card {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); overflow: hidden;
+      transition: var(--transition);
+      animation: fadeUp .3s ease both;
+    }
+    .match-card:hover { border-color: var(--border-gold); transform: translateY(-3px); box-shadow: var(--shadow); }
+    .match-header {
+      padding: 12px 18px; background: rgba(0,0,0,.25);
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: .72rem; color: var(--text-muted); border-bottom: 1px solid var(--border);
+    }
+    .stage-badge {
+      background: rgba(201,168,76,.12); color: var(--gold);
+      border: 1px solid rgba(201,168,76,.3); border-radius: 4px;
+      padding: 2px 8px; font-weight: 600; font-size: .68rem;
+      text-transform: uppercase; letter-spacing: .06em;
+    }
+    .status-badge {
+      border-radius: 50px; padding: 2px 10px; font-weight: 700; font-size: .68rem;
+    }
+    .status-open   { background: rgba(29,185,84,.15); color: var(--green); border: 1px solid rgba(29,185,84,.3); }
+    .status-closed { background: rgba(229,62,62,.12); color: #F08080; border: 1px solid rgba(229,62,62,.25); }
+    .status-result { background: rgba(201,168,76,.15); color: var(--gold); border: 1px solid var(--border-gold); }
+
+    .match-body { padding: 20px 18px 14px; }
+    .match-teams {
+      display: grid; grid-template-columns: 1fr auto 1fr;
+      align-items: center; gap: 12px; text-align: center; margin-bottom: 16px;
+    }
+    .team-flag  { font-size: 2.2rem; display: block; margin-bottom: 5px; }
+    .team-name  { font-weight: 700; font-size: .88rem; line-height: 1.2; word-break: break-word; }
+    .vs-divider {
+      font-family: 'Bebas Neue', sans-serif; font-size: 1.6rem;
+      color: var(--gold-dim); letter-spacing: .1em;
+    }
+
+    /* Stats bars */
+    .community-stats { margin: 12px 0; }
+    .stat-bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; font-size: .72rem; }
+    .stat-bar-label { width: 90px; text-align: right; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .stat-bar-track { flex: 1; height: 5px; background: rgba(255,255,255,.07); border-radius: 3px; overflow: hidden; }
+    .stat-bar-fill  { height: 100%; border-radius: 3px; transition: width .6s ease; }
+    .bar-home  { background: linear-gradient(90deg, var(--blue), #60A5FA); }
+    .bar-draw  { background: linear-gradient(90deg, var(--gold-dim), var(--gold)); }
+    .bar-away  { background: linear-gradient(90deg, var(--red), #FC8181); }
+    .stat-bar-pct  { width: 34px; font-weight: 600; color: var(--text); }
+
+    /* Vote controls */
+    .vote-options { display: flex; gap: 8px; margin: 14px 0 10px; }
+    .vote-option  { flex: 1; }
+    .vote-option input[type=radio] { display: none; }
+    .vote-option label {
+      display: block; text-align: center; padding: 8px 4px;
+      border-radius: var(--radius); border: 1px solid var(--border);
+      font-size: .78rem; font-weight: 600; cursor: pointer;
+      transition: var(--transition); color: var(--text-muted);
+    }
+    .vote-option input[type=radio]:checked + label,
+    .vote-option label.voted {
+      border-color: var(--gold); color: var(--gold);
+      background: rgba(201,168,76,.1);
+    }
+    .vote-option label:hover { border-color: var(--border-gold); color: var(--text); }
+
+    .btn-vote-submit {
+      width: 100%; padding: 10px; border-radius: var(--radius); border: none;
+      background: linear-gradient(135deg, var(--gold), var(--gold-dim));
+      color: var(--bg-deep); font-family: 'DM Sans', sans-serif;
+      font-weight: 700; font-size: .88rem; cursor: pointer; transition: var(--transition);
+    }
+    .btn-vote-submit:hover { opacity: .9; transform: translateY(-1px); }
+    .btn-vote-submit:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+
+    .my-vote-tag {
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+      padding: 8px; border-radius: var(--radius); font-size: .8rem; font-weight: 600;
+      background: rgba(201,168,76,.08); border: 1px solid rgba(201,168,76,.25);
+      color: var(--gold); margin-top: 6px;
+    }
+    .result-tag {
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+      padding: 8px; border-radius: var(--radius); font-size: .8rem; font-weight: 600;
+      margin-top: 6px;
+    }
+    .result-win  { background: rgba(29,185,84,.1); border: 1px solid rgba(29,185,84,.3); color: var(--green); }
+    .result-loss { background: rgba(229,62,62,.08); border: 1px solid rgba(229,62,62,.2); color: #F08080; }
+
+    /* Admin controls */
+    .admin-controls {
+      padding: 10px 18px 14px; border-top: 1px solid var(--border);
+      display: flex; gap: 6px; flex-wrap: wrap;
+    }
+    .btn-admin {
+      padding: 5px 12px; border-radius: 6px; border: 1px solid var(--border);
+      background: rgba(255,255,255,.04); color: var(--text-muted);
+      font-family: 'DM Sans', sans-serif; font-size: .75rem; font-weight: 600;
+      cursor: pointer; transition: var(--transition);
+    }
+    .btn-admin:hover { border-color: var(--gold); color: var(--gold); background: rgba(201,168,76,.08); }
+    .btn-admin.danger:hover { border-color: var(--red); color: var(--red); background: rgba(229,62,62,.08); }
+
+    /* ===== VOTES TABLE ===== */
+    .votes-toolbar {
+      display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 18px;
+    }
+    .search-input {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 9px 14px;
+      color: var(--text); font-family: 'DM Sans', sans-serif; font-size: .875rem;
+      outline: none; transition: var(--transition); width: 220px;
+    }
+    .search-input:focus { border-color: var(--border-gold); }
+    .votes-scroll { overflow-x: auto; border-radius: var(--radius-lg); border: 1px solid var(--border); }
+    .votes-table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+    .votes-table th {
+      padding: 10px 14px; background: var(--bg-mid);
+      color: var(--text-muted); font-weight: 600; text-align: center;
+      white-space: nowrap; border-bottom: 1px solid var(--border);
+      font-size: .72rem; text-transform: uppercase; letter-spacing: .06em;
+    }
+    .votes-table th:first-child { text-align: left; position: sticky; left: 0; background: var(--bg-mid); z-index: 2; }
+    .votes-table td {
+      padding: 9px 14px; border-bottom: 1px solid rgba(255,255,255,.04);
+      text-align: center; white-space: nowrap;
+    }
+    .votes-table td:first-child {
+      position: sticky; left: 0; background: var(--bg-card);
+      font-weight: 600; text-align: left;
+      border-right: 1px solid var(--border);
+    }
+    .votes-table tr:hover td { background: var(--bg-hover); }
+    .votes-table tr:hover td:first-child { background: var(--bg-hover); }
+    .vote-pill {
+      display: inline-block; padding: 2px 9px; border-radius: 50px; font-size: .7rem; font-weight: 700;
+    }
+    .vote-home { background: rgba(59,130,246,.15); color: #60A5FA; border: 1px solid rgba(59,130,246,.3); }
+    .vote-draw { background: rgba(201,168,76,.12); color: var(--gold); border: 1px solid rgba(201,168,76,.3); }
+    .vote-away { background: rgba(229,62,62,.12); color: #FC8181; border: 1px solid rgba(229,62,62,.25); }
+    .vote-none { color: var(--text-muted); font-size: .7rem; }
+
+    /* ===== ADMIN PANEL ===== */
+    .admin-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
+    .admin-section {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); padding: 22px;
+    }
+    .admin-section h3 { font-size: 1rem; font-weight: 700; color: var(--gold); margin-bottom: 16px; }
+    .form-group { margin-bottom: 12px; }
+    .form-group label { font-size: .78rem; color: var(--text-muted); display: block; margin-bottom: 5px; }
+    .form-input {
+      width: 100%; background: var(--bg-mid); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 9px 12px; color: var(--text);
+      font-family: 'DM Sans', sans-serif; font-size: .875rem; outline: none;
+      transition: var(--transition);
+    }
+    .form-input:focus { border-color: var(--border-gold); }
+    .form-checkbox { display: flex; align-items: center; gap: 8px; }
+    .form-checkbox input { width: 15px; height: 15px; accent-color: var(--gold); }
+    .form-checkbox label { font-size: .83rem; margin: 0; color: var(--text); }
+    .btn-primary {
+      width: 100%; padding: 10px; border-radius: var(--radius); border: none;
+      background: linear-gradient(135deg, var(--gold), var(--gold-dim));
+      color: var(--bg-deep); font-family: 'DM Sans', sans-serif;
+      font-weight: 700; font-size: .875rem; cursor: pointer; transition: var(--transition); margin-top: 6px;
+    }
+    .btn-primary:hover { opacity: .9; }
+    .btn-secondary {
+      padding: 8px 16px; border-radius: var(--radius); border: 1px solid var(--border);
+      background: transparent; color: var(--text); font-family: 'DM Sans', sans-serif;
+      font-weight: 600; font-size: .82rem; cursor: pointer; transition: var(--transition);
+    }
+    .btn-secondary:hover { border-color: var(--gold); color: var(--gold); }
+    .user-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+    .user-row {
+      display: flex; align-items: center; gap: 10px;
+      background: var(--bg-mid); border-radius: var(--radius); padding: 10px 12px;
+      border: 1px solid var(--border);
+    }
+    .user-row-name { flex: 1; font-weight: 600; font-size: .85rem; }
+    .admin-tag {
+      font-size: .65rem; background: rgba(201,168,76,.15); color: var(--gold);
+      border: 1px solid rgba(201,168,76,.3); border-radius: 4px; padding: 1px 6px;
+    }
+    .user-row-pass { flex: 1; }
+    .mini-input {
+      background: var(--bg-deep); border: 1px solid var(--border);
+      border-radius: 8px; padding: 6px 10px; color: var(--text);
+      font-family: 'DM Sans', sans-serif; font-size: .78rem; outline: none; width: 100%;
+      transition: var(--transition);
+    }
+    .mini-input:focus { border-color: var(--border-gold); }
+    .btn-sm {
+      padding: 5px 10px; border-radius: 7px; border: 1px solid var(--border);
+      background: transparent; color: var(--text-muted); cursor: pointer;
+      font-size: .72rem; font-weight: 600; transition: var(--transition);
+    }
+    .btn-sm:hover { border-color: var(--gold); color: var(--gold); }
+    .btn-sm.danger:hover { border-color: var(--red); color: var(--red); }
+
+    /* ===== LOGIN PAGE ===== */
+    #loginPage {
+      min-height: 100vh; display: flex; align-items: center; justify-content: center;
+      padding: 20px;
+    }
+    .login-card {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 28px; padding: 40px 36px; width: 100%; max-width: 440px;
+      box-shadow: 0 24px 64px rgba(0,0,0,.5);
+      position: relative; overflow: hidden;
+    }
+    .login-card::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+      background: linear-gradient(90deg, var(--gold), var(--gold-dim), var(--gold));
+    }
+    .login-logo { text-align: center; margin-bottom: 32px; }
+    .login-logo .big-trophy { font-size: 3.5rem; display: block; margin-bottom: 8px; }
+    .login-logo h1 {
+      font-family: 'Bebas Neue', sans-serif; font-size: 2rem;
+      color: var(--gold); letter-spacing: .1em;
+    }
+    .login-logo p { color: var(--text-muted); font-size: .8rem; letter-spacing: .15em; text-transform: uppercase; }
+    .login-tabs { display: flex; gap: 4px; background: var(--bg-mid); border-radius: 10px; padding: 4px; margin-bottom: 24px; }
+    .login-tab {
+      flex: 1; text-align: center; padding: 8px; border-radius: 7px; cursor: pointer;
+      font-weight: 600; font-size: .85rem; color: var(--text-muted); transition: var(--transition);
+    }
+    .login-tab.active { background: var(--bg-card); color: var(--gold); }
+    .login-form-panel { display: none; }
+    .login-form-panel.active { display: block; }
+    .login-error {
+      background: rgba(229,62,62,.1); border: 1px solid rgba(229,62,62,.3);
+      color: #FC8181; border-radius: var(--radius); padding: 10px 14px;
+      font-size: .82rem; margin-bottom: 14px; display: none;
+    }
+    .btn-logout {
+      padding: 7px 16px; border-radius: 50px; border: 1px solid rgba(229,62,62,.3);
+      background: rgba(229,62,62,.08); color: #FC8181;
+      font-family: 'DM Sans', sans-serif; font-size: .82rem; font-weight: 600;
+      cursor: pointer; transition: var(--transition);
+    }
+    .btn-logout:hover { background: rgba(229,62,62,.15); border-color: rgba(229,62,62,.5); }
+
+    /* ===== SECTION TITLES ===== */
+    .section-title {
+      font-family: 'Bebas Neue', sans-serif; font-size: 1.5rem; color: var(--gold);
+      letter-spacing: .08em; margin-bottom: 20px; display: flex; align-items: center; gap: 10px;
+    }
+    .section-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+    /* ===== RESPONSIVE ===== */
+    @media (max-width: 600px) {
+      .hero-stats { grid-template-columns: repeat(2, 1fr); }
+      .topbar-brand .brand-text p { display: none; }
+      .tabs { width: 100%; }
+      .tab-btn { flex: 1; text-align: center; padding: 9px 10px; font-size: .8rem; }
+      .matches-grid { grid-template-columns: 1fr; }
+      .admin-grid { grid-template-columns: 1fr; }
+      .login-card { padding: 28px 20px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- LOADER -->
+<div id="globalLoader">
+  <div class="loader-ring"></div>
+</div>
+
+<!-- TOASTS -->
+<div id="toast-container"></div>
+
+<!-- ===== LOGIN ===== -->
+<div id="loginPage" style="display:none;">
+  <div class="login-card">
+    <div class="login-logo">
+      <span class="big-trophy">🏆</span>
+      <h1>PORRA MUNDIALISTA</h1>
+      <p>FIFA World Cup 2026</p>
+    </div>
+    <div class="login-tabs">
+      <div class="login-tab active" id="tabLogin" onclick="switchLoginTab('login')">Iniciar sesión</div>
+      <div class="login-tab" id="tabRegister" onclick="switchLoginTab('register')">Registrarse</div>
+    </div>
+
+    <div id="loginError" class="login-error"></div>
+
+    <!-- Login Form -->
+    <div id="loginFormPanel" class="login-form-panel active">
+      <div class="form-group">
+        <label>Usuario</label>
+        <input class="form-input" type="text" id="loginName" placeholder="Tu nombre de usuario" autocomplete="username">
+      </div>
+      <div class="form-group">
+        <label>Contraseña</label>
+        <input class="form-input" type="password" id="loginPassword" placeholder="••••••••" autocomplete="current-password">
+      </div>
+      <button class="btn-primary" id="loginBtn">Entrar al torneo</button>
+    </div>
+
+    <!-- Register Form -->
+    <div id="registerFormPanel" class="login-form-panel">
+      <div class="form-group">
+        <label>Nombre de usuario</label>
+        <input class="form-input" type="text" id="regName" placeholder="Elige un nombre único" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label>Contraseña <span style="color:var(--text-muted);font-size:.75rem">(mín. 8 caracteres)</span></label>
+        <input class="form-input" type="password" id="regPassword" placeholder="Mínimo 8 caracteres" autocomplete="new-password">
+      </div>
+      <button class="btn-primary" id="registerBtn">Crear cuenta</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== APP ===== -->
+<div id="appPage" style="display:none;" class="app-shell">
+
+  <!-- TOPBAR -->
+  <div class="topbar">
+    <div class="topbar-brand">
+      <span class="trophy">🏆</span>
+      <div class="brand-text">
+        <h1>PORRA MUNDIALISTA</h1>
+        <p>FIFA World Cup · 2026</p>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <div class="user-chip">
+        <div class="avatar" id="userAvatar">?</div>
+        <span id="userName">—</span>
+        <span id="adminBadge" style="display:none; font-size:.65rem; background:var(--gold); color:var(--bg-deep); border-radius:4px; padding:1px 6px; font-weight:700; margin-left:4px;">ADMIN</span>
+      </div>
+      <button class="btn-logout" id="logoutBtn">Salir</button>
+    </div>
+  </div>
+
+  <!-- HERO STATS -->
+  <div class="hero-stats" id="heroStats"></div>
+
+  <!-- TABS -->
+  <div class="tabs">
+    <button class="tab-btn active" onclick="showTab('partidos')">⚽ Partidos</button>
+    <button class="tab-btn" onclick="showTab('ranking')">🏅 Ranking</button>
+    <button class="tab-btn" onclick="showTab('pronosticos')">📋 Pronósticos</button>
+    <button class="tab-btn" id="adminTabBtn" onclick="showTab('admin')" style="display:none;">🔧 Admin</button>
+  </div>
+
+  <!-- ===== TAB: PARTIDOS ===== -->
+  <div class="tab-panel active" id="tab-partidos">
+    <div class="match-filters">
+      <button class="filter-btn active" onclick="filterMatches('todos',this)">Todos</button>
+      <button class="filter-btn" onclick="filterMatches('abiertos',this)">⏳ Abiertos</button>
+      <button class="filter-btn" onclick="filterMatches('votados',this)">✅ Votados</button>
+      <button class="filter-btn" onclick="filterMatches('cerrados',this)">🔒 Cerrados</button>
+      <button class="filter-btn" onclick="filterMatches('resultado',this)">🏁 Con resultado</button>
+    </div>
+    <div class="matches-grid" id="matchesGrid"></div>
+  </div>
+
+  <!-- ===== TAB: RANKING ===== -->
+  <div class="tab-panel" id="tab-ranking">
+    <p class="section-title">Clasificación General</p>
+    <div class="leaderboard-list" id="leaderboardList"></div>
+  </div>
+
+  <!-- ===== TAB: PRONÓSTICOS ===== -->
+  <div class="tab-panel" id="tab-pronosticos">
+    <p class="section-title">Pronósticos de todos los jugadores</p>
+    <div class="votes-toolbar">
+      <input class="search-input" type="text" id="votesSearch" placeholder="🔍 Buscar jugador..." oninput="filtrarVotos()">
+    </div>
+    <div class="votes-scroll">
+      <table class="votes-table" id="votesTable">
+        <tbody><tr><td style="padding:20px; color:var(--text-muted);">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ===== TAB: ADMIN ===== -->
+  <div class="tab-panel" id="tab-admin">
+    <p class="section-title">Panel de Administración</p>
+    <div class="admin-grid">
+      <!-- Crear usuario -->
+      <div class="admin-section">
+        <h3>➕ Crear usuario</h3>
+        <div class="form-group"><label>Nombre</label><input class="form-input" type="text" id="newUserName" placeholder="Nombre de usuario"></div>
+        <div class="form-group"><label>Contraseña (mín. 8 caracteres)</label><input class="form-input" type="password" id="newUserPass" placeholder="••••••••"></div>
+        <div class="form-group"><div class="form-checkbox"><input type="checkbox" id="newUserAdmin"><label for="newUserAdmin">¿Es administrador?</label></div></div>
+        <button class="btn-primary" id="createUserBtn">Crear usuario</button>
+      </div>
+      <!-- Exportar -->
+      <div class="admin-section">
+        <h3>📥 Exportar datos</h3>
+        <p style="font-size:.83rem; color:var(--text-muted); margin-bottom:16px; line-height:1.5;">Descarga todos los votos, resultados y puntuaciones en formato CSV.</p>
+        <button class="btn-secondary" id="exportCsvBtn">⬇ Descargar CSV</button>
+      </div>
+      <!-- Usuarios -->
+      <div class="admin-section" style="grid-column: 1 / -1;">
+        <h3>👥 Gestión de usuarios</h3>
+        <div class="user-list" id="userList"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+/* =====================================================
+   ESTADO GLOBAL
+===================================================== */
+let token = null;
+let currentUser = null;
+let matches = [];
+let myVotes = {};
+let results = {};
+let allVotesData = [];
+let allVotesFiltrados = [];
+let currentMatchFilter = 'todos';
+let leaderboardData = [];
+
+/* =====================================================
+   UTILIDADES
+===================================================== */
+function esc(str) {
+  if (str == null) return '';
+  return String(str).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+function toast(msg, type = 'success') {
+  const icons = { success: '✅', error: '❌', info: 'ℹ️' };
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.innerHTML = `<span class="toast-icon">${icons[type]||'ℹ️'}</span><span>${esc(msg)}</span>`;
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+}
+
+function showLoader(show) {
+  const loader = document.getElementById('globalLoader');
+  if (show) {
+    loader.classList.remove('hidden');
+  } else {
+    loader.classList.add('hidden');
+  }
+}
+
+function getFlag(country) {
+  const flags = {
+    'Argentina': '🇦🇷','Brazil': '🇧🇷','France': '🇫🇷','Germany': '🇩🇪',
+    'Spain': '🇪🇸','England': '🏴󠁧󠁢󠁥󠁮󠁧󠁿','Portugal': '🇵🇹','Netherlands': '🇳🇱',
+    'Belgium': '🇧🇪','Italy': '🇮🇹','Uruguay': '🇺🇾','Colombia': '🇨🇴',
+    'Mexico': '🇲🇽','USA': '🇺🇸','Canada': '🇨🇦','Japan': '🇯🇵',
+    'South Korea': '🇰🇷','Australia': '🇦🇺','Morocco': '🇲🇦','Senegal': '🇸🇳',
+    'Nigeria': '🇳🇬','Ghana': '🇬🇭','Cameroon': '🇨🇲','Egypt': '🇪🇬',
+    'Saudi Arabia': '🇸🇦','Iran': '🇮🇷','Qatar': '🇶🇦','Serbia': '🇷🇸',
+    'Croatia': '🇭🇷','Denmark': '🇩🇰','Sweden': '🇸🇪','Switzerland': '🇨🇭',
+    'Poland': '🇵🇱','Ukraine': '🇺🇦','Ecuador': '🇪🇨','Chile': '🇨🇱',
+    'Peru': '🇵🇪','Paraguay': '🇵🇾','Bolivia': '🇧🇴','Venezuela': '🇻🇪',
+    'Costa Rica': '🇨🇷','Honduras': '🇭🇳','Panama': '🇵🇦','El Salvador': '🇸🇻',
+    'Czechia': '🇨🇿','Hungary': '🇭🇺','Slovakia': '🇸🇰','Austria': '🇦🇹',
+    'Wales': '🏴󠁧󠁢󠁷󠁬󠁳󠁿','Scotland': '🏴󠁧󠁢󠁳󠁣󠁴󠁿','Turkey': '🇹🇷','Greece': '🇬🇷',
+    'Romania': '🇷🇴','Slovenia': '🇸🇮','North Macedonia': '🇲🇰','Albania': '🇦🇱',
+    'Montenegro': '🇲🇪','Bosnia': '🇧🇦','New Zealand': '🇳🇿','Jamaica': '🇯🇲',
+    'Trinidad and Tobago': '🇹🇹','Guatemala': '🇬🇹','Haiti': '🇭🇹',
+    'Cuba': '🇨🇺','Algeria': '🇩🇿','Tunisia': '🇹🇳','Mali': '🇲🇱',
+    'South Africa': '🇿🇦','Zambia': '🇿🇲','Kenya': '🇰🇪','Tanzania': '🇹🇿',
+    'Ethiopia': '🇪🇹','Angola': '🇦🇴','Mozambique': '🇲🇿','Zimbabwe': '🇿🇼',
+    'Iraq': '🇮🇶','Jordan': '🇯🇴','Lebanon': '🇱🇧','Syria': '🇸🇾',
+    'Palestine': '🇵🇸','UAE': '🇦🇪','Kuwait': '🇰🇼','Bahrain': '🇧🇭',
+    'Uzbekistan': '🇺🇿','India': '🇮🇳','China': '🇨🇳','Thailand': '🇹🇭',
+    'Vietnam': '🇻🇳','Philippines': '🇵🇭','Indonesia': '🇮🇩','Malaysia': '🇲🇾',
+    'Tonga':'🇹🇴','Fiji':'🇫🇯','Papua New Guinea':'🇵🇬','Samoa':'🇼🇸'
+  };
+  return flags[country] || '🏳️';
+}
+
+/* =====================================================
+   API
+===================================================== */
+async function apiCall(url, options = {}) {
+  options.headers = options.headers || {};
+  if (token) options.headers['Authorization'] = token;
+  options.headers['Content-Type'] = 'application/json';
+  try {
+    const res = await fetch(url, options);
+    if (res.status === 401) { logout(); return null; }
+    return res;
+  } catch {
+    toast('Error de conexión', 'error');
+    return null;
+  }
+}
+
+/* =====================================================
+   AUTH
+===================================================== */
+function switchLoginTab(tab) {
+  ['login','register'].forEach(t => {
+    document.getElementById(`tab${t.charAt(0).toUpperCase()+t.slice(1)}`).classList.toggle('active', t === tab);
+    document.getElementById(`${t}FormPanel`).classList.toggle('active', t === tab);
+  });
+  document.getElementById('loginError').style.display = 'none';
+}
+
+function showLoginError(msg) {
+  const el = document.getElementById('loginError');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+async function registrar() {
+  const name = document.getElementById('regName').value.trim();
+  const password = document.getElementById('regPassword').value;
+  if (!name || name.length < 2) return showLoginError('El nombre debe tener al menos 2 caracteres.');
+  if (password.length < 8) return showLoginError('La contraseña debe tener mínimo 8 caracteres.');
+  const res = await fetch('/api/register', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, password, isAdmin: false })
+  });
+  const data = await res.json();
+  if (!res.ok) return showLoginError(data.error || 'Error al registrar.');
+  toast('Cuenta creada. ¡Iniciando sesión!');
+  document.getElementById('loginName').value = name;
+  document.getElementById('loginPassword').value = password;
+  switchLoginTab('login');
+  await iniciarSesion();
+}
+
+async function iniciarSesion() {
+  const name = document.getElementById('loginName').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  if (!name || !password) return showLoginError('Completa usuario y contraseña.');
+  const res = await fetch('/api/login', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, password })
+  });
+  const data = await res.json();
+  if (!res.ok) return showLoginError(data.error || 'Credenciales inválidas.');
+  token = data.token;
+  currentUser = data;
+  localStorage.setItem('porraToken', token);
+  localStorage.setItem('porraUser', JSON.stringify(data));
+  mostrarApp();
+}
+
+function logout() {
+  if (token) apiCall('/api/logout', { method: 'POST' });
+  token = null; currentUser = null;
+  localStorage.removeItem('porraToken');
+  localStorage.removeItem('porraUser');
+  document.getElementById('appPage').style.display = 'none';
+  document.getElementById('loginPage').style.display = 'flex';
+  document.getElementById('loginName').value = '';
+  document.getElementById('loginPassword').value = '';
+  document.getElementById('regName').value = '';
+  document.getElementById('regPassword').value = '';
+}
+
+function mostrarApp() {
+  document.getElementById('loginPage').style.display = 'none';
+  document.getElementById('appPage').style.display = 'block';
+  document.getElementById('userName').textContent = currentUser.name;
+  document.getElementById('userAvatar').textContent = currentUser.name.charAt(0).toUpperCase();
+  if (currentUser.isAdmin) {
+    document.getElementById('adminBadge').style.display = '';
+    document.getElementById('adminTabBtn').style.display = '';
+  }
+  cargarTodo();
+}
+
+/* =====================================================
+   DATOS
+===================================================== */
+async function cargarTodo() {
+  showLoader(true);
+  const [rM, rV, rR, rL] = await Promise.all([
+    apiCall('/api/matches'),
+    apiCall('/api/votes'),
+    apiCall('/api/results'),
+    apiCall('/api/leaderboard')
+  ]);
+  if (rM) matches  = await rM.json(); else matches = [];
+  if (rV) myVotes  = await rV.json(); else myVotes = {};
+  if (rR) results  = await rR.json(); else results = {};
+  if (rL) leaderboardData = await rL.json(); else leaderboardData = [];
+  renderHeroStats();
+  renderMatches();
+  renderLeaderboard();
+  await cargarVotosDetalle();
+  if (currentUser.isAdmin) cargarUsuarios();
+  showLoader(false);
+}
+
+/* =====================================================
+   HERO STATS
+===================================================== */
+function renderHeroStats() {
+  const userId = currentUser.userId;
+  const myEntry = leaderboardData.find(p => p.id === userId);
+  const myRank  = leaderboardData.findIndex(p => p.id === userId) + 1;
+  const myPts   = myEntry ? (myEntry.points || 0) : 0;
+  const totalVotados = Object.keys(myVotes).length;
+  const myMatchesWithResult = matches.filter(m => results[m.id] && myVotes[m.id]);
+  const myWins = myMatchesWithResult.filter(m => myVotes[m.id] === results[m.id]).length;
+  const pctAciertos = myMatchesWithResult.length ? Math.round((myWins/myMatchesWithResult.length)*100) : 0;
+
+  document.getElementById('heroStats').innerHTML = `
+    <div class="stat-card"><span class="stat-icon">⭐</span><div class="stat-value">${myPts}</div><div class="stat-label">Puntos totales</div></div>
+    <div class="stat-card"><span class="stat-icon">🏅</span><div class="stat-value">#${myRank||'—'}</div><div class="stat-label">Posición en ranking</div></div>
+    <div class="stat-card"><span class="stat-icon">⚽</span><div class="stat-value">${totalVotados}</div><div class="stat-label">Partidos votados</div></div>
+    <div class="stat-card"><span class="stat-icon">🎯</span><div class="stat-value">${pctAciertos}%</div><div class="stat-label">Tasa de acierto</div></div>
+  `;
+}
+
+/* =====================================================
+   TABS
+===================================================== */
+function showTab(tab) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(`tab-${tab}`).classList.add('active');
+  event.currentTarget.classList.add('active');
+}
+
+/* =====================================================
+   MATCHES
+===================================================== */
+function filterMatches(tipo, btn) {
+  currentMatchFilter = tipo;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderMatches();
+}
+
+function renderMatches() {
+  const now = new Date();
+  let filtered = matches.filter(m => {
+    const closed   = now > new Date(m.match_datetime);
+    const hasResult= !!results[m.id];
+    const voted    = !!myVotes[m.id];
+    if (currentMatchFilter === 'abiertos')   return !closed && !hasResult;
+    if (currentMatchFilter === 'votados')    return voted;
+    if (currentMatchFilter === 'cerrados')   return closed && !hasResult;
+    if (currentMatchFilter === 'resultado')  return hasResult;
+    return true;
+  });
+
+  if (!filtered.length) {
+    document.getElementById('matchesGrid').innerHTML =
+      `<div style="color:var(--text-muted); font-size:.9rem; padding:20px;">No hay partidos en esta categoría.</div>`;
+    return;
+  }
+
+  // Community stats: count votes per match from allVotesData
+  const communityStats = {};
+  allVotesData.forEach(v => {
+    if (!communityStats[v.match_id]) communityStats[v.match_id] = { home:0, draw:0, away:0 };
+    communityStats[v.match_id][v.vote]++;
+  });
+
+  document.getElementById('matchesGrid').innerHTML = filtered.map((m, i) => {
+    const deadline  = new Date(m.match_datetime);
+    const closed    = now > deadline;
+    const resultado = results[m.id];
+    const miVoto    = myVotes[m.id];
+    const flagH     = getFlag(m.home);
+    const flagA     = getFlag(m.away);
+
+    const cs = communityStats[m.id] || { home:0, draw:0, away:0 };
+    const csTotal = cs.home + cs.draw + cs.away;
+    const pHome = csTotal ? Math.round((cs.home/csTotal)*100) : 0;
+    const pDraw = csTotal ? Math.round((cs.draw/csTotal)*100) : 0;
+    const pAway = csTotal ? Math.round((cs.away/csTotal)*100) : 0;
+
+    const statusBadge = resultado
+      ? `<span class="status-badge status-result">🏁 Finalizado</span>`
+      : closed
+        ? `<span class="status-badge status-closed">🔒 Cerrado</span>`
+        : `<span class="status-badge status-open">⏳ Abierto</span>`;
+
+    let voteUI = '';
+    if (!closed && !resultado) {
+      voteUI = `
+        <div class="vote-options">
+          <div class="vote-option">
+            <input type="radio" name="v_${esc(m.id)}" id="h_${esc(m.id)}" value="home" ${miVoto==='home'?'checked':''} ${miVoto?'disabled':''}>
+            <label for="h_${esc(m.id)}" class="${miVoto==='home'?'voted':''}">${flagH} Local</label>
+          </div>
+          <div class="vote-option">
+            <input type="radio" name="v_${esc(m.id)}" id="d_${esc(m.id)}" value="draw" ${miVoto==='draw'?'checked':''} ${miVoto?'disabled':''}>
+            <label for="d_${esc(m.id)}" class="${miVoto==='draw'?'voted':''}">🤝 Empate</label>
+          </div>
+          <div class="vote-option">
+            <input type="radio" name="v_${esc(m.id)}" id="a_${esc(m.id)}" value="away" ${miVoto==='away'?'checked':''} ${miVoto?'disabled':''}>
+            <label for="a_${esc(m.id)}" class="${miVoto==='away'?'voted':''}">${flagA} Visitante</label>
+          </div>
+        </div>
+        ${!miVoto ? `<button class="btn-vote-submit" data-id="${esc(m.id)}">Guardar pronóstico</button>` : ''}
+        ${miVoto ? `<div class="my-vote-tag">🗳️ Tu voto: <strong>${miVoto==='home'?m.home:miVoto==='draw'?'Empate':m.away}</strong></div>` : ''}
+      `;
+    } else if (resultado) {
+      const resultadoNombre = resultado==='home'?m.home:resultado==='draw'?'Empate':m.away;
+      const acerto = miVoto === resultado;
+      voteUI = `
+        <div class="result-tag ${acerto?'result-win':'result-loss'}">
+          🏁 ${esc(resultadoNombre)} ${miVoto ? (acerto ? '· ✅ +1 punto' : '· ❌ Sin punto') : '· No votaste'}
+        </div>
+      `;
+    } else {
+      voteUI = miVoto
+        ? `<div class="my-vote-tag">🗳️ Tu voto: <strong>${esc(miVoto==='home'?m.home:miVoto==='draw'?'Empate':m.away)}</strong></div>`
+        : `<div style="color:var(--text-muted); font-size:.78rem; text-align:center; padding:8px;">Votación cerrada</div>`;
+    }
+
+    const adminControls = currentUser.isAdmin ? `
+      <div class="admin-controls">
+        ${!resultado
+          ? `<button class="btn-admin" data-action="result" data-id="${esc(m.id)}" data-res="home">🏠 ${esc(m.home)}</button>
+             <button class="btn-admin" data-action="result" data-id="${esc(m.id)}" data-res="draw">🤝 Empate</button>
+             <button class="btn-admin" data-action="result" data-id="${esc(m.id)}" data-res="away">✈️ ${esc(m.away)}</button>`
+          : `<button class="btn-admin danger" data-action="clear" data-id="${esc(m.id)}">🗑️ Borrar resultado</button>`}
+        <button class="btn-admin" data-action="editdate" data-id="${esc(m.id)}" data-datetime="${esc(m.match_datetime)}">📅 Cierre</button>
+      </div>
+    ` : '';
+
+    const dt = deadline.toLocaleString('es-CO', {day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+
+    return `
+      <div class="match-card" style="animation-delay:${i*0.04}s">
+        <div class="match-header">
+          <span class="stage-badge">${esc(m.stage)}</span>
+          <span style="font-size:.7rem">${dt}</span>
+          ${statusBadge}
+        </div>
+        <div class="match-body">
+          <div class="match-teams">
+            <div><span class="team-flag">${flagH}</span><span class="team-name">${esc(m.home)}</span></div>
+            <div class="vs-divider">VS</div>
+            <div><span class="team-flag">${flagA}</span><span class="team-name">${esc(m.away)}</span></div>
+          </div>
+          ${csTotal > 0 ? `
+          <div class="community-stats">
+            <div class="stat-bar-row"><span class="stat-bar-label">${esc(m.home)}</span><div class="stat-bar-track"><div class="stat-bar-fill bar-home" style="width:${pHome}%"></div></div><span class="stat-bar-pct">${pHome}%</span></div>
+            <div class="stat-bar-row"><span class="stat-bar-label">Empate</span><div class="stat-bar-track"><div class="stat-bar-fill bar-draw" style="width:${pDraw}%"></div></div><span class="stat-bar-pct">${pDraw}%</span></div>
+            <div class="stat-bar-row"><span class="stat-bar-label">${esc(m.away)}</span><div class="stat-bar-track"><div class="stat-bar-fill bar-away" style="width:${pAway}%"></div></div><span class="stat-bar-pct">${pAway}%</span></div>
+          </div>` : ''}
+          ${voteUI}
+        </div>
+        ${adminControls}
+      </div>
+    `;
+  }).join('');
+
+  // Eventos votación
+  document.querySelectorAll('.btn-vote-submit').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const matchId = btn.dataset.id;
+      const sel = document.querySelector(`input[name="v_${matchId}"]:checked`);
+      if (!sel) return toast('Selecciona un resultado primero', 'error');
+      btn.disabled = true; btn.textContent = 'Guardando...';
+      const res = await apiCall('/api/vote', { method:'POST', body: JSON.stringify({ matchId, vote: sel.value }) });
+      if (res && res.ok) {
+        toast('¡Pronóstico guardado! 🎉');
+        await cargarTodo();
+      } else {
+        const err = await res?.json();
+        toast(err?.error || 'Error al guardar', 'error');
+        btn.disabled = false; btn.textContent = 'Guardar pronóstico';
+      }
+    });
+  });
+
+  // Eventos admin
+  if (currentUser.isAdmin) {
+    document.querySelectorAll('[data-action]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const action = btn.dataset.action;
+        const matchId = btn.dataset.id;
+        if (action === 'result') {
+          await apiCall('/api/results', { method:'POST', body: JSON.stringify({ matchId, result: btn.dataset.res }) });
+          toast('Resultado guardado');
+          cargarTodo();
+        } else if (action === 'clear') {
+          await apiCall('/api/results', { method:'POST', body: JSON.stringify({ matchId, result: null }) });
+          toast('Resultado borrado', 'info');
+          cargarTodo();
+        } else if (action === 'editdate') {
+          const nd = prompt('Nueva fecha y hora (ej: 2026-06-11T15:00:00)', btn.dataset.datetime);
+          if (nd && !isNaN(Date.parse(nd))) {
+            await apiCall('/api/matches/datetime', { method:'POST', body: JSON.stringify({ matchId, datetime: nd }) });
+            toast('Fecha actualizada');
+            cargarTodo();
+          }
+        }
+      });
+    });
+  }
+}
+
+/* =====================================================
+   LEADERBOARD
+===================================================== */
+function renderLeaderboard() {
+  const medals = ['🥇','🥈','🥉'];
+  const rankClasses = ['gold','silver','bronze'];
+  document.getElementById('leaderboardList').innerHTML = leaderboardData.map((p, i) => {
+    const isMe = p.id === currentUser.userId;
+    const medal = i < 3 ? medals[i] : '';
+    const rankCls = i < 3 ? rankClasses[i] : '';
+    return `
+      <div class="lb-item ${isMe?'me':''}">
+        <span class="lb-rank ${rankCls}">${i+1}</span>
+        ${medal ? `<span class="lb-medal">${medal}</span>` : '<span style="width:24px"></span>'}
+        <span class="lb-name">${esc(p.name)} ${isMe?'<span class="lb-you">TÚ</span>':''}</span>
+        <div>
+          <div class="lb-pts">${p.points||0}</div>
+          <div class="lb-pts-label">pts</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+/* =====================================================
+   VOTOS DETALLE
+===================================================== */
+async function cargarVotosDetalle() {
+  const res = await apiCall('/api/all-votes');
+  if (!res) return;
+  allVotesData = await res.json();
+  filtrarVotos();
+}
+
+function filtrarVotos() {
+  const q = (document.getElementById('votesSearch')?.value || '').toLowerCase();
+  if (!allVotesData.length) {
+    document.getElementById('votesTable').innerHTML = '<tbody><tr><td style="padding:20px; color:var(--text-muted);">Sin votos registrados.</td></tr></tbody>';
+    return;
+  }
+  const partidosMap = new Map();
+  allVotesData.forEach(v => {
+    if (!partidosMap.has(v.match_id)) partidosMap.set(v.match_id, { home:v.home, away:v.away, date:v.date, stage:v.stage });
+  });
+  const usuariosMap = new Map();
+  allVotesData.forEach(v => {
+    if (!usuariosMap.has(v.user_id)) usuariosMap.set(v.user_id, { name: v.name, votes:{} });
+    usuariosMap.get(v.user_id).votes[v.match_id] = v.vote;
+  });
+  const pids = Array.from(partidosMap.keys());
+  let head = '<thead><tr><th>Jugador</th>';
+  pids.forEach(mid => {
+    const p = partidosMap.get(mid);
+    head += `<th title="${esc(p.stage)}">${esc(p.home)} v ${esc(p.away)}<br><small>${esc(p.date)}</small></th>`;
+  });
+  head += '</tr></thead>';
+  let body = '<tbody>';
+  usuariosMap.forEach((user, uid) => {
+    if (q && !user.name.toLowerCase().includes(q)) return;
+    const isMe = uid === currentUser.userId;
+    body += `<tr><td>${esc(user.name)} ${isMe?'<span class="lb-you">TÚ</span>':''}</td>`;
+    pids.forEach(mid => {
+      const v = user.votes[mid];
+      const p = partidosMap.get(mid);
+      const res = results[mid];
+      const correct = v && res && v === res;
+      let pill = `<span class="vote-none">—</span>`;
+      if (v === 'home') pill = `<span class="vote-pill vote-home" ${correct?'style="border-color:var(--green)"':''}>${esc(p.home)}</span>`;
+      else if (v === 'draw') pill = `<span class="vote-pill vote-draw" ${correct?'style="border-color:var(--green)"':''}">🤝</span>`;
+      else if (v === 'away') pill = `<span class="vote-pill vote-away" ${correct?'style="border-color:var(--green)"':''}>${esc(p.away)}</span>`;
+      body += `<td>${pill}</td>`;
+    });
+    body += '</tr>';
+  });
+  body += '</tbody>';
+  document.getElementById('votesTable').innerHTML = head + body;
+}
+
+/* =====================================================
+   ADMIN: USUARIOS
+===================================================== */
+async function cargarUsuarios() {
+  const res = await apiCall('/api/users');
+  if (!res) return;
+  const users = await res.json();
+  document.getElementById('userList').innerHTML = users.map(u => `
+    <div class="user-row">
+      <span class="user-row-name">${esc(u.name)} ${u.is_admin?'<span class="admin-tag">ADMIN</span>':''}</span>
+      <div class="user-row-pass">
+        <input class="mini-input" type="password" id="np_${u.id}" placeholder="Nueva contraseña (mín 8)">
+      </div>
+      <button class="btn-sm" onclick="resetPassword(${u.id})">🔑</button>
+      <button class="btn-sm danger" onclick="borrarUsuario(${u.id})">✕</button>
+    </div>
+  `).join('');
+}
+
+window.resetPassword = async (userId) => {
+  const input = document.getElementById(`np_${userId}`);
+  const pw = input.value.trim();
+  if (!pw) return toast('Escribe la nueva contraseña', 'error');
+  if (pw.length < 8) return toast('Mínimo 8 caracteres', 'error');
+  const res = await apiCall('/api/users/reset-password', { method:'POST', body: JSON.stringify({ userId, newPassword: pw }) });
+  if (res && res.ok) { toast('Contraseña actualizada'); input.value = ''; }
+  else { const e = await res?.json(); toast(e?.error || 'Error', 'error'); }
+};
+
+window.borrarUsuario = async (userId) => {
+  if (!confirm('¿Eliminar usuario y todos sus votos?')) return;
+  await apiCall(`/api/users/${userId}`, { method:'DELETE' });
+  toast('Usuario eliminado', 'info');
+  cargarTodo();
+};
+
+/* =====================================================
+   EVENTS
+===================================================== */
+document.getElementById('loginBtn').onclick = iniciarSesion;
+document.getElementById('registerBtn').onclick = registrar;
+document.getElementById('logoutBtn').onclick = logout;
+
+document.getElementById('createUserBtn').onclick = async () => {
+  const name = document.getElementById('newUserName').value.trim();
+  const password = document.getElementById('newUserPass').value;
+  const isAdmin = document.getElementById('newUserAdmin').checked;
+  if (!name) return toast('Ingresa un nombre de usuario', 'error');
+  if (password.length < 8) return toast('Contraseña mínimo 8 caracteres', 'error');
+  const res = await apiCall('/api/register', { method:'POST', body: JSON.stringify({ name, password, isAdmin }) });
+  if (res && res.ok) {
+    toast(`Usuario "${name}" creado`);
+    document.getElementById('newUserName').value = '';
+    document.getElementById('newUserPass').value = '';
+    document.getElementById('newUserAdmin').checked = false;
+    cargarUsuarios();
+  } else {
+    const e = await res?.json();
+    toast(e?.error || 'Error al crear usuario', 'error');
+  }
+};
+
+document.getElementById('exportCsvBtn').onclick = () => window.open('/api/export-data', '_blank');
+
+['loginName','loginPassword'].forEach(id => {
+  document.getElementById(id).addEventListener('keydown', e => { if (e.key === 'Enter') iniciarSesion(); });
+});
+
+/* =====================================================
+   INIT
+===================================================== */
+window.onload = () => {
+  const savedToken = localStorage.getItem('porraToken');
+  const savedUser  = localStorage.getItem('porraUser');
+  if (savedToken && savedUser) {
+    token = savedToken;
+    try { currentUser = JSON.parse(savedUser); } catch { currentUser = null; }
+    if (currentUser) { mostrarApp(); return; }
+  }
+  showLoader(false);
+  document.getElementById('loginPage').style.display = 'flex';
+};
+</script>
+</body>
+</html>
