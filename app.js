@@ -56,6 +56,11 @@ db.serialize(() => {
     match_id TEXT PRIMARY KEY,
     result TEXT
   )`);
+  db.run(`CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT
+  )`);
+  db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('allow_vote_edit', '0')`);
 });
 
 // ========== MIGRACIONES (columnas nuevas) ==========
@@ -305,6 +310,24 @@ app.post('/api/matches/datetime', authMiddleware, (req, res) => {
   });
 });
 
+// ========== AJUSTES (settings) ==========
+app.get('/api/settings', authMiddleware, (req, res) => {
+  db.get("SELECT value FROM settings WHERE key = 'allow_vote_edit'", (err, row) => {
+    if (err) return res.status(500).json({ error: 'Error' });
+    res.json({ allowVoteEdit: row ? row.value === '1' : false });
+  });
+});
+
+app.post('/api/admin/settings', authMiddleware, (req, res) => {
+  if (!req.isAdmin) return res.status(403).json({ error: 'Solo admin' });
+  const { allowVoteEdit } = req.body;
+  db.run("INSERT INTO settings (key, value) VALUES ('allow_vote_edit', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+    [allowVoteEdit ? '1' : '0'], function (err) {
+      if (err) return res.status(500).json({ error: 'Error' });
+      res.json({ success: true, allowVoteEdit: !!allowVoteEdit });
+    });
+});
+
 app.post('/api/vote', authMiddleware, (req, res) => {
   const { matchId, vote, homeGoals, awayGoals } = req.body;
 
@@ -324,15 +347,25 @@ app.post('/api/vote', authMiddleware, (req, res) => {
     if (new Date() > new Date(match.match_datetime)) {
       return res.status(403).json({ error: 'Votación cerrada por fecha/hora' });
     }
-    db.get("SELECT id FROM votes WHERE user_id = ? AND match_id = ?",
-      [req.userId, matchId], (err, existing) => {
-        if (existing) return res.status(403).json({ error: 'Ya votaste en este partido' });
-        db.run("INSERT INTO votes (user_id, match_id, vote, home_goals, away_goals) VALUES (?, ?, ?, ?, ?)",
-          [req.userId, matchId, finalVote, tieneGoles ? hg : null, tieneGoles ? ag : null], function (err) {
-            if (err) return res.status(500).json({ error: 'Error al guardar voto' });
-            res.json({ success: true });
-          });
-      });
+    db.get("SELECT value FROM settings WHERE key = 'allow_vote_edit'", (err, settingRow) => {
+      const allowEdit = settingRow ? settingRow.value === '1' : false;
+      db.get("SELECT id FROM votes WHERE user_id = ? AND match_id = ?",
+        [req.userId, matchId], (err, existing) => {
+          if (existing && !allowEdit) return res.status(403).json({ error: 'Ya votaste en este partido' });
+          if (existing && allowEdit) {
+            return db.run("UPDATE votes SET vote = ?, home_goals = ?, away_goals = ? WHERE user_id = ? AND match_id = ?",
+              [finalVote, tieneGoles ? hg : null, tieneGoles ? ag : null, req.userId, matchId], function (err) {
+                if (err) return res.status(500).json({ error: 'Error al actualizar voto' });
+                res.json({ success: true, updated: true });
+              });
+          }
+          db.run("INSERT INTO votes (user_id, match_id, vote, home_goals, away_goals) VALUES (?, ?, ?, ?, ?)",
+            [req.userId, matchId, finalVote, tieneGoles ? hg : null, tieneGoles ? ag : null], function (err) {
+              if (err) return res.status(500).json({ error: 'Error al guardar voto' });
+              res.json({ success: true });
+            });
+        });
+    });
   });
 });
 

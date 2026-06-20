@@ -617,6 +617,14 @@
         <button class="btn-primary" id="restoreBackupBtn">📤 Restaurar backup</button>
         <p id="backupResult" style="font-size:.78rem; color:var(--text-muted); margin-top:10px;"></p>
       </div>
+      <!-- Reglas de votación -->
+      <div class="admin-section">
+        <h3>⚙️ Reglas de votación</h3>
+        <div class="form-checkbox">
+          <input type="checkbox" id="allowVoteEditToggle">
+          <label for="allowVoteEditToggle">Permitir que los jugadores modifiquen su pronóstico ya guardado (mientras el partido siga abierto)</label>
+        </div>
+      </div>
       <!-- Usuarios -->
       <div class="admin-section" style="grid-column: 1 / -1;">
         <h3>👥 Gestión de usuarios</h3>
@@ -640,6 +648,7 @@ let allVotesData = [];
 let allVotesFiltrados = [];
 let currentMatchFilter = 'todos';
 let leaderboardData = [];
+let appSettings = { allowVoteEdit: false };
 
 /* =====================================================
    UTILIDADES
@@ -796,16 +805,22 @@ function mostrarApp() {
 ===================================================== */
 async function cargarTodo() {
   showLoader(true);
-  const [rM, rV, rR, rL] = await Promise.all([
+  const [rM, rV, rR, rL, rS] = await Promise.all([
     apiCall('/api/matches'),
     apiCall('/api/votes'),
     apiCall('/api/results'),
-    apiCall('/api/leaderboard')
+    apiCall('/api/leaderboard'),
+    apiCall('/api/settings')
   ]);
   if (rM) matches  = await rM.json(); else matches = [];
   if (rV) myVotes  = await rV.json(); else myVotes = {};
   if (rR) results  = await rR.json(); else results = {};
   if (rL) leaderboardData = await rL.json(); else leaderboardData = [];
+  if (rS) appSettings = await rS.json(); else appSettings = { allowVoteEdit: false };
+  if (currentUser.isAdmin) {
+    const toggle = document.getElementById('allowVoteEditToggle');
+    if (toggle) toggle.checked = appSettings.allowVoteEdit;
+  }
   renderHeroStats();
   renderMatches();
   renderLeaderboard();
@@ -923,6 +938,20 @@ function renderMatches() {
           <span style="font-size:.85rem;">${esc(m.away)} ${flagA}</span>
         </div>
         <button class="btn-vote-submit" data-id="${esc(m.id)}">Guardar pronóstico</button>
+      `;
+    } else if (!closed && !resultado && miVoto && appSettings.allowVoteEdit) {
+      const hgVal = tieneGoles ? miVotoObj.homeGoals : '';
+      const agVal = tieneGoles ? miVotoObj.awayGoals : '';
+      voteUI = `
+        <div class="my-vote-tag" style="margin-bottom:8px;">🗳️ Tu pronóstico actual: <strong>${esc(tieneGoles ? `${hgVal} - ${agVal}` : (miVoto==='home'?m.home:miVoto==='draw'?'Empate':m.away))}</strong></div>
+        <div style="display:flex;align-items:center;gap:8px;margin:10px 0;flex-wrap:wrap;">
+          <span style="font-size:.85rem;">${flagH} ${esc(m.home)}</span>
+          <input class="form-input" type="number" min="0" max="20" id="hg_${esc(m.id)}" style="width:55px;text-align:center;padding:8px;" value="${hgVal}" placeholder="0">
+          <span>-</span>
+          <input class="form-input" type="number" min="0" max="20" id="ag_${esc(m.id)}" style="width:55px;text-align:center;padding:8px;" value="${agVal}" placeholder="0">
+          <span style="font-size:.85rem;">${esc(m.away)} ${flagA}</span>
+        </div>
+        <button class="btn-vote-submit" data-id="${esc(m.id)}">✏️ Actualizar pronóstico</button>
       `;
     } else if (!closed && !resultado && miVoto) {
       const marcador = tieneGoles ? `${miVotoObj.homeGoals} - ${miVotoObj.awayGoals}` : (miVoto==='home'?m.home:miVoto==='draw'?'Empate':m.away);
@@ -1184,6 +1213,19 @@ document.getElementById('createUserBtn').onclick = async () => {
 };
 
 document.getElementById('exportCsvBtn').onclick = () => window.open('/api/export-data', '_blank');
+
+document.getElementById('allowVoteEditToggle').onchange = async (e) => {
+  const allowVoteEdit = e.target.checked;
+  const res = await apiCall('/api/admin/settings', { method: 'POST', body: JSON.stringify({ allowVoteEdit }) });
+  if (res && res.ok) {
+    appSettings.allowVoteEdit = allowVoteEdit;
+    toast(allowVoteEdit ? 'Los jugadores ya pueden modificar su pronóstico' : 'Modificación de pronósticos deshabilitada');
+    renderMatches();
+  } else {
+    e.target.checked = !allowVoteEdit;
+    toast('Error al guardar el ajuste', 'error');
+  }
+};
 
 document.getElementById('syncMatchesBtn').onclick = async () => {
   const btn = document.getElementById('syncMatchesBtn');
