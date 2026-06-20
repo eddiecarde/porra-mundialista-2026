@@ -837,14 +837,16 @@ function renderHeroStats() {
   const myEntry = leaderboardData.find(p => p.id === userId);
   const myRank  = leaderboardData.findIndex(p => p.id === userId) + 1;
   const myPts   = myEntry ? (myEntry.points || 0) : 0;
-  const myExactos = myEntry ? (myEntry.exactos || 0) : 0;
   const totalVotados = Object.keys(myVotes).length;
+  const myMatchesWithResult = matches.filter(m => results[m.id] && myVotes[m.id]);
+  const myWins = myMatchesWithResult.filter(m => myVotes[m.id] === results[m.id]).length;
+  const pctAciertos = myMatchesWithResult.length ? Math.round((myWins/myMatchesWithResult.length)*100) : 0;
 
   document.getElementById('heroStats').innerHTML = `
     <div class="stat-card"><span class="stat-icon">⭐</span><div class="stat-value">${myPts}</div><div class="stat-label">Puntos totales</div></div>
     <div class="stat-card"><span class="stat-icon">🏅</span><div class="stat-value">#${myRank||'—'}</div><div class="stat-label">Posición en ranking</div></div>
     <div class="stat-card"><span class="stat-icon">⚽</span><div class="stat-value">${totalVotados}</div><div class="stat-label">Partidos votados</div></div>
-    <div class="stat-card"><span class="stat-icon">🎯</span><div class="stat-value">${myExactos}</div><div class="stat-label">Marcadores exactos</div></div>
+    <div class="stat-card"><span class="stat-icon">🎯</span><div class="stat-value">${pctAciertos}%</div><div class="stat-label">Tasa de acierto</div></div>
   `;
 }
 
@@ -898,11 +900,8 @@ function renderMatches() {
   document.getElementById('matchesGrid').innerHTML = filtered.map((m, i) => {
     const deadline    = new Date(m.match_datetime);
     const closed      = now > deadline;
-    const resultadoObj= results[m.id];
-    const resultado   = resultadoObj ? resultadoObj.result : null;
-    const miVotoObj   = myVotes[m.id];
-    const miVoto      = miVotoObj ? miVotoObj.vote : null;
-    const tieneGoles  = miVotoObj && miVotoObj.homeGoals !== null && miVotoObj.homeGoals !== undefined;
+    const resultado   = results[m.id];
+    const miVoto      = myVotes[m.id];
     const flagH       = getFlag(m.home);
     const flagA       = getFlag(m.away);
 
@@ -918,73 +917,48 @@ function renderMatches() {
         ? `<span class="status-badge status-closed">🔒 Cerrado</span>`
         : `<span class="status-badge status-open">⏳ Abierto</span>`;
 
-    let puntosPartido = 0, etiquetaPuntos = '';
-    if (miVoto && resultado) {
-      const exacto = tieneGoles && resultadoObj.homeGoals !== null && resultadoObj.homeGoals !== undefined
-        && miVotoObj.homeGoals === resultadoObj.homeGoals && miVotoObj.awayGoals === resultadoObj.awayGoals;
-      if (exacto) { puntosPartido = 3; etiquetaPuntos = '🎯 +3 puntos (exacto)'; }
-      else if (miVoto === resultado) { puntosPartido = 1; etiquetaPuntos = '✅ +1 punto'; }
-      else { etiquetaPuntos = '❌ Sin punto'; }
-    }
-
     let voteUI = '';
-    if (!closed && !resultado && !miVoto) {
+    if (!closed && !resultado && (!miVoto || appSettings.allowVoteEdit)) {
       voteUI = `
-        <div style="display:flex;align-items:center;gap:8px;margin:14px 0 10px;flex-wrap:wrap;">
-          <span style="font-size:.85rem;">${flagH} ${esc(m.home)}</span>
-          <input class="form-input" type="number" min="0" max="20" id="hg_${esc(m.id)}" style="width:55px;text-align:center;padding:8px;" placeholder="0">
-          <span>-</span>
-          <input class="form-input" type="number" min="0" max="20" id="ag_${esc(m.id)}" style="width:55px;text-align:center;padding:8px;" placeholder="0">
-          <span style="font-size:.85rem;">${esc(m.away)} ${flagA}</span>
+        <div class="vote-options">
+          <div class="vote-option">
+            <input type="radio" name="v_${esc(m.id)}" id="h_${esc(m.id)}" value="home" ${miVoto==='home'?'checked':''}>
+            <label for="h_${esc(m.id)}" class="${miVoto==='home'?'voted':''}">${flagH} Local</label>
+          </div>
+          <div class="vote-option">
+            <input type="radio" name="v_${esc(m.id)}" id="d_${esc(m.id)}" value="draw" ${miVoto==='draw'?'checked':''}>
+            <label for="d_${esc(m.id)}" class="${miVoto==='draw'?'voted':''}">🤝 Empate</label>
+          </div>
+          <div class="vote-option">
+            <input type="radio" name="v_${esc(m.id)}" id="a_${esc(m.id)}" value="away" ${miVoto==='away'?'checked':''}>
+            <label for="a_${esc(m.id)}" class="${miVoto==='away'?'voted':''}">${flagA} Visitante</label>
+          </div>
         </div>
-        <button class="btn-vote-submit" data-id="${esc(m.id)}">Guardar pronóstico</button>
+        <button class="btn-vote-submit" data-id="${esc(m.id)}">${miVoto ? '✏️ Actualizar pronóstico' : 'Guardar pronóstico'}</button>
       `;
-    } else if (!closed && !resultado && miVoto && appSettings.allowVoteEdit) {
-      const hgVal = tieneGoles ? miVotoObj.homeGoals : '';
-      const agVal = tieneGoles ? miVotoObj.awayGoals : '';
-      voteUI = `
-        <div class="my-vote-tag" style="margin-bottom:8px;">🗳️ Tu pronóstico actual: <strong>${esc(tieneGoles ? `${hgVal} - ${agVal}` : (miVoto==='home'?m.home:miVoto==='draw'?'Empate':m.away))}</strong></div>
-        <div style="display:flex;align-items:center;gap:8px;margin:10px 0;flex-wrap:wrap;">
-          <span style="font-size:.85rem;">${flagH} ${esc(m.home)}</span>
-          <input class="form-input" type="number" min="0" max="20" id="hg_${esc(m.id)}" style="width:55px;text-align:center;padding:8px;" value="${hgVal}" placeholder="0">
-          <span>-</span>
-          <input class="form-input" type="number" min="0" max="20" id="ag_${esc(m.id)}" style="width:55px;text-align:center;padding:8px;" value="${agVal}" placeholder="0">
-          <span style="font-size:.85rem;">${esc(m.away)} ${flagA}</span>
-        </div>
-        <button class="btn-vote-submit" data-id="${esc(m.id)}">✏️ Actualizar pronóstico</button>
-      `;
-    } else if (!closed && !resultado && miVoto) {
-      const marcador = tieneGoles ? `${miVotoObj.homeGoals} - ${miVotoObj.awayGoals}` : (miVoto==='home'?m.home:miVoto==='draw'?'Empate':m.away);
-      voteUI = `<div class="my-vote-tag">🗳️ Tu pronóstico: <strong>${esc(marcador)}</strong></div>`;
     } else if (resultado) {
-      const rGoals = (resultadoObj.homeGoals !== null && resultadoObj.homeGoals !== undefined) ? ` (${resultadoObj.homeGoals}-${resultadoObj.awayGoals})` : '';
-      const resultadoNombre = (resultado==='home'?m.home:resultado==='draw'?'Empate':m.away) + rGoals;
-      const acerto = puntosPartido > 0;
+      const resultadoNombre = resultado==='home'?m.home:resultado==='draw'?'Empate':m.away;
+      const acerto = miVoto === resultado;
       voteUI = `
         <div class="result-tag ${acerto?'result-win':'result-loss'}">
-          🏁 ${esc(resultadoNombre)} ${miVoto ? `· ${etiquetaPuntos}` : '· No votaste'}
+          🏁 ${esc(resultadoNombre)} ${miVoto ? (acerto ? '· ✅ +1 punto' : '· ❌ Sin punto') : '· No votaste'}
         </div>
       `;
     } else {
       voteUI = miVoto
-        ? `<div class="my-vote-tag">🗳️ Tu pronóstico: <strong>${esc(tieneGoles ? `${miVotoObj.homeGoals} - ${miVotoObj.awayGoals}` : (miVoto==='home'?m.home:miVoto==='draw'?'Empate':m.away))}</strong></div>`
+        ? `<div class="my-vote-tag">🗳️ Tu voto: <strong>${esc(miVoto==='home'?m.home:miVoto==='draw'?'Empate':m.away)}</strong></div>`
         : `<div style="color:var(--text-muted); font-size:.78rem; text-align:center; padding:8px;">Votación cerrada</div>`;
     }
 
     const adminControls = currentUser.isAdmin ? `
       <div class="admin-controls">
-        ${resultado
-          ? `<button class="btn-admin danger" data-action="clear" data-id="${esc(m.id)}">🗑️ Borrar resultado</button>`
-          : closed
-            ? `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-                 <span style="font-size:.78rem;">${esc(m.home)}</span>
-                 <input class="form-input" type="number" min="0" max="20" id="rhg_${esc(m.id)}" style="width:48px;text-align:center;padding:5px;" placeholder="0">
-                 <span>-</span>
-                 <input class="form-input" type="number" min="0" max="20" id="rag_${esc(m.id)}" style="width:48px;text-align:center;padding:5px;" placeholder="0">
-                 <span style="font-size:.78rem;">${esc(m.away)}</span>
-                 <button class="btn-admin" data-action="resultscore" data-id="${esc(m.id)}">✅ Registrar</button>
-               </div>`
-            : `<span style="font-size:.75rem; color:var(--text-muted);">⏳ Disponible cuando cierre la votación</span>`}
+        ${!resultado
+          ? closed
+            ? `<button class="btn-admin" data-action="result" data-id="${esc(m.id)}" data-res="home">🏠 ${esc(m.home)}</button>
+               <button class="btn-admin" data-action="result" data-id="${esc(m.id)}" data-res="draw">🤝 Empate</button>
+               <button class="btn-admin" data-action="result" data-id="${esc(m.id)}" data-res="away">✈️ ${esc(m.away)}</button>`
+            : `<span style="font-size:.75rem; color:var(--text-muted);">⏳ Disponible cuando cierre la votación</span>`
+          : `<button class="btn-admin danger" data-action="clear" data-id="${esc(m.id)}">🗑️ Borrar resultado</button>`}
         <button class="btn-admin" data-action="editdate" data-id="${esc(m.id)}" data-datetime="${esc(m.match_datetime)}">📅 Cierre</button>
       </div>
     ` : '';
@@ -1017,17 +991,14 @@ function renderMatches() {
     `;
   }).join('');
 
-  // Eventos votación (marcador exacto)
+  // Eventos votación
   document.querySelectorAll('.btn-vote-submit').forEach(btn => {
     btn.addEventListener('click', async () => {
       const matchId = btn.dataset.id;
-      const hg = document.getElementById(`hg_${matchId}`).value;
-      const ag = document.getElementById(`ag_${matchId}`).value;
-      if (hg === '' || ag === '' || parseInt(hg) < 0 || parseInt(ag) < 0) {
-        return toast('Ingresa un marcador válido (goles de cada equipo)', 'error');
-      }
+      const sel = document.querySelector(`input[name="v_${matchId}"]:checked`);
+      if (!sel) return toast('Selecciona un resultado primero', 'error');
       btn.disabled = true; btn.textContent = 'Guardando...';
-      const res = await apiCall('/api/vote', { method:'POST', body: JSON.stringify({ matchId, homeGoals: parseInt(hg), awayGoals: parseInt(ag) }) });
+      const res = await apiCall('/api/vote', { method:'POST', body: JSON.stringify({ matchId, vote: sel.value }) });
       if (res && res.ok) {
         toast('¡Pronóstico guardado! 🎉');
         await cargarTodo();
@@ -1045,13 +1016,8 @@ function renderMatches() {
       btn.addEventListener('click', async () => {
         const action = btn.dataset.action;
         const matchId = btn.dataset.id;
-        if (action === 'resultscore') {
-          const hg = document.getElementById(`rhg_${matchId}`).value;
-          const ag = document.getElementById(`rag_${matchId}`).value;
-          if (hg === '' || ag === '') return toast('Ingresa el marcador del partido', 'error');
-          const homeGoals = parseInt(hg), awayGoals = parseInt(ag);
-          const result = homeGoals > awayGoals ? 'home' : (homeGoals < awayGoals ? 'away' : 'draw');
-          await apiCall('/api/results', { method:'POST', body: JSON.stringify({ matchId, result, homeGoals, awayGoals }) });
+        if (action === 'result') {
+          await apiCall('/api/results', { method:'POST', body: JSON.stringify({ matchId, result: btn.dataset.res }) });
           toast('Resultado guardado');
           cargarTodo();
         } else if (action === 'clear') {
@@ -1086,7 +1052,6 @@ function renderLeaderboard() {
         <span class="lb-rank ${rankCls}">${i+1}</span>
         ${medal ? `<span class="lb-medal">${medal}</span>` : '<span style="width:24px"></span>'}
         <span class="lb-name">${esc(p.name)} ${isMe?'<span class="lb-you">TÚ</span>':''}</span>
-        <span style="font-size:.75rem; color:var(--text-muted);">🎯 ${p.exactos||0} exactos · ✅ ${p.aciertos||0} aciertos</span>
         <div>
           <div class="lb-pts">${p.points||0}</div>
           <div class="lb-pts-label">pts</div>
@@ -1137,7 +1102,7 @@ function filtrarVotos() {
       const v = user.votes[mid];
       const p = partidosMap.get(mid);
       const res = results[mid];
-      const correct = v && res && v === res.result;
+      const correct = v && res && v === res;
       let pill = `<span class="vote-none">—</span>`;
       if (v === 'home') pill = `<span class="vote-pill vote-home" ${correct?'style="border-color:var(--green)"':''}>${esc(p.home)}</span>`;
       else if (v === 'draw') pill = `<span class="vote-pill vote-draw" ${correct?'style="border-color:var(--green)"':''}">🤝</span>`;

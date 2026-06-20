@@ -329,17 +329,8 @@ app.post('/api/admin/settings', authMiddleware, (req, res) => {
 });
 
 app.post('/api/vote', authMiddleware, (req, res) => {
-  const { matchId, vote, homeGoals, awayGoals } = req.body;
-
-  const hg = parseInt(homeGoals);
-  const ag = parseInt(awayGoals);
-  const tieneGoles = !isNaN(hg) && !isNaN(ag) && hg >= 0 && ag >= 0;
-  let finalVote = vote;
-  if (tieneGoles) {
-    finalVote = hg > ag ? 'home' : (hg < ag ? 'away' : 'draw');
-  }
-
-  if (!matchId || !['home', 'draw', 'away'].includes(finalVote)) {
+  const { matchId, vote } = req.body;
+  if (!matchId || !['home', 'draw', 'away'].includes(vote)) {
     return res.status(400).json({ error: 'Voto inválido' });
   }
   db.get("SELECT match_datetime FROM matches WHERE id = ?", [matchId], (err, match) => {
@@ -353,14 +344,14 @@ app.post('/api/vote', authMiddleware, (req, res) => {
         [req.userId, matchId], (err, existing) => {
           if (existing && !allowEdit) return res.status(403).json({ error: 'Ya votaste en este partido' });
           if (existing && allowEdit) {
-            return db.run("UPDATE votes SET vote = ?, home_goals = ?, away_goals = ? WHERE user_id = ? AND match_id = ?",
-              [finalVote, tieneGoles ? hg : null, tieneGoles ? ag : null, req.userId, matchId], function (err) {
+            return db.run("UPDATE votes SET vote = ? WHERE user_id = ? AND match_id = ?",
+              [vote, req.userId, matchId], function (err) {
                 if (err) return res.status(500).json({ error: 'Error al actualizar voto' });
                 res.json({ success: true, updated: true });
               });
           }
-          db.run("INSERT INTO votes (user_id, match_id, vote, home_goals, away_goals) VALUES (?, ?, ?, ?, ?)",
-            [req.userId, matchId, finalVote, tieneGoles ? hg : null, tieneGoles ? ag : null], function (err) {
+          db.run("INSERT INTO votes (user_id, match_id, vote) VALUES (?, ?, ?)",
+            [req.userId, matchId, vote], function (err) {
               if (err) return res.status(500).json({ error: 'Error al guardar voto' });
               res.json({ success: true });
             });
@@ -370,10 +361,10 @@ app.post('/api/vote', authMiddleware, (req, res) => {
 });
 
 app.get('/api/votes', authMiddleware, (req, res) => {
-  db.all("SELECT match_id, vote, home_goals, away_goals FROM votes WHERE user_id = ?", [req.userId], (err, rows) => {
+  db.all("SELECT match_id, vote FROM votes WHERE user_id = ?", [req.userId], (err, rows) => {
     if (err) return res.status(500).json({ error: 'Error' });
     const map = {};
-    rows.forEach(r => { map[r.match_id] = { vote: r.vote, homeGoals: r.home_goals, awayGoals: r.away_goals }; });
+    rows.forEach(r => { map[r.match_id] = r.vote; });
     res.json(map);
   });
 });
@@ -381,13 +372,18 @@ app.get('/api/votes', authMiddleware, (req, res) => {
 app.get('/api/all-votes', authMiddleware, (req, res) => {
   // Solo se devuelven votos de partidos cuyo match_datetime ya pasó —
   // los pronósticos de otros jugadores deben permanecer ocultos hasta el cierre.
+  // match_datetime se guarda en ISO con 'T' (ej. 2026-06-20T19:00:00.000Z).
+  // Comparar ese texto directo contra datetime('now') (que usa espacio) fallaba
+  // cuando el partido cerraba el mismo día calendario, porque 'T' (0x54) es
+  // lexicográficamente mayor que ' ' (0x20) — por eso hay que normalizar ambos
+  // lados con datetime() antes de compararlos.
   db.all(`
-    SELECT u.id as user_id, u.name, v.match_id, v.vote, v.home_goals, v.away_goals,
+    SELECT u.id as user_id, u.name, v.match_id, v.vote,
            m.home, m.away, m.date, m.stage
     FROM votes v
     JOIN users u ON v.user_id = u.id
     JOIN matches m ON v.match_id = m.id
-    WHERE m.match_datetime < datetime('now')
+    WHERE datetime(m.match_datetime) < datetime('now')
     ORDER BY u.name, m.match_datetime
   `, (err, rows) => {
     if (err) return res.status(500).json({ error: 'Error' });
@@ -405,18 +401,8 @@ app.get('/api/export-data', authMiddleware, (req, res) => {
       m.away          AS visitante,
       m.stage         AS fase,
       v.vote          AS pronostico,
-      v.home_goals    AS pronostico_local,
-      v.away_goals    AS pronostico_visitante,
       r.result        AS resultado_real,
-      r.home_goals    AS goles_local,
-      r.away_goals    AS goles_visitante,
-      CASE
-        WHEN r.result IS NULL THEN ''
-        WHEN v.home_goals IS NOT NULL AND r.home_goals IS NOT NULL
-             AND v.home_goals = r.home_goals AND v.away_goals = r.away_goals THEN 3
-        WHEN v.vote = r.result THEN 1
-        ELSE 0
-      END AS puntos
+      CASE WHEN v.vote = r.result THEN 1 ELSE 0 END AS puntos
     FROM users u
     LEFT JOIN votes v ON u.id = v.user_id
     LEFT JOIN matches m ON v.match_id = m.id
@@ -425,10 +411,10 @@ app.get('/api/export-data', authMiddleware, (req, res) => {
     ORDER BY u.name, m.match_datetime
   `, (err, rows) => {
     if (err) return res.status(500).json({ error: 'Error' });
-    const campos = ['usuario', 'fecha', 'local', 'visitante', 'fase', 'pronostico', 'pronostico_local', 'pronostico_visitante', 'resultado_real', 'goles_local', 'goles_visitante', 'puntos'];
+    const campos = ['usuario', 'fecha', 'local', 'visitante', 'fase', 'pronostico', 'resultado_real', 'puntos'];
     let csv = '\uFEFF' + campos.join(',') + '\n'; // BOM para Excel
     rows.forEach(row => {
-      const fila = campos.map(c => `"${(row[c] ?? '').toString().replace(/"/g, '""')}"`).join(',');
+      const fila = campos.map(c => `"${(row[c] || '').toString().replace(/"/g, '""')}"`).join(',');
       csv += fila + '\n';
     });
     res.setHeader('Content-disposition', 'attachment; filename=porra_mundial2026.csv');
@@ -438,17 +424,17 @@ app.get('/api/export-data', authMiddleware, (req, res) => {
 });
 
 app.get('/api/results', authMiddleware, (req, res) => {
-  db.all('SELECT match_id, result, home_goals, away_goals FROM results', (err, rows) => {
+  db.all('SELECT match_id, result FROM results', (err, rows) => {
     if (err) return res.status(500).json({ error: 'Error' });
     const map = {};
-    rows.forEach(r => { map[r.match_id] = { result: r.result, homeGoals: r.home_goals, awayGoals: r.away_goals }; });
+    rows.forEach(r => { map[r.match_id] = r.result; });
     res.json(map);
   });
 });
 
 app.post('/api/results', authMiddleware, (req, res) => {
   if (!req.isAdmin) return res.status(403).json({ error: 'Solo admin' });
-  const { matchId, result, homeGoals, awayGoals } = req.body;
+  const { matchId, result } = req.body;
   if (!matchId) return res.status(400).json({ error: 'Falta matchId' });
   if (result !== null && !['home', 'draw', 'away'].includes(result)) {
     return res.status(400).json({ error: 'Resultado inválido' });
@@ -465,10 +451,8 @@ app.post('/api/results', authMiddleware, (req, res) => {
     if (new Date() < new Date(match.match_datetime)) {
       return res.status(403).json({ error: 'No se puede registrar el resultado: la votación de este partido aún no ha cerrado' });
     }
-    const hg = parseInt(homeGoals);
-    const ag = parseInt(awayGoals);
-    db.run("INSERT OR REPLACE INTO results (match_id, result, home_goals, away_goals) VALUES (?, ?, ?, ?)",
-      [matchId, result, isNaN(hg) ? null : hg, isNaN(ag) ? null : ag], function (err) {
+    db.run("INSERT OR REPLACE INTO results (match_id, result) VALUES (?, ?)",
+      [matchId, result], function (err) {
         if (err) return res.status(500).json({ error: 'Error' });
         res.json({ success: true });
       });
@@ -478,26 +462,13 @@ app.post('/api/results', authMiddleware, (req, res) => {
 app.get('/api/leaderboard', authMiddleware, (req, res) => {
   db.all(`
     SELECT u.id, u.name,
-      COALESCE(SUM(
-        CASE
-          WHEN r.result IS NULL THEN 0
-          WHEN v.home_goals IS NOT NULL AND r.home_goals IS NOT NULL
-               AND v.home_goals = r.home_goals AND v.away_goals = r.away_goals THEN 3
-          WHEN v.vote = r.result THEN 1
-          ELSE 0
-        END
-      ), 0) AS points,
-      COALESCE(SUM(CASE WHEN v.home_goals IS NOT NULL AND r.home_goals IS NOT NULL
-               AND v.home_goals = r.home_goals AND v.away_goals = r.away_goals THEN 1 ELSE 0 END), 0) AS exactos,
-      COALESCE(SUM(CASE WHEN r.result IS NOT NULL AND v.vote = r.result
-               AND NOT (v.home_goals IS NOT NULL AND r.home_goals IS NOT NULL
-               AND v.home_goals = r.home_goals AND v.away_goals = r.away_goals) THEN 1 ELSE 0 END), 0) AS aciertos
+           COALESCE(SUM(CASE WHEN v.vote = r.result THEN 1 ELSE 0 END), 0) AS points
     FROM users u
     LEFT JOIN votes v ON u.id = v.user_id
     LEFT JOIN results r ON v.match_id = r.match_id
     WHERE u.is_admin = 0
     GROUP BY u.id
-    ORDER BY points DESC, exactos DESC, u.name
+    ORDER BY points DESC, u.name
   `, (err, rows) => {
     if (err) return res.status(500).json({ error: 'Error' });
     res.json(rows);
