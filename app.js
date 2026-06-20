@@ -2,11 +2,15 @@ const express = require('express');
 const sqlite3 = require('sqlite3').verbose();
 const bcrypt = require('bcrypt');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // ========== MIDDLEWARES GLOBALES ==========
+// Límite ampliado solo para restaurar backups; debe ir antes del límite general
+// porque express.json() no vuelve a parsear un body que ya fue parseado.
+app.use('/api/admin/restore', express.json({ limit: '10mb' }));
 app.use(express.json({ limit: '50kb' }));           // Limita tamaño de payloads
 app.use(express.static('public'));
 
@@ -21,6 +25,9 @@ app.use((req, res, next) => {
 // ========== BASE DE DATOS ==========
 const DB_PATH = process.env.DB_PATH || './database.db';
 const db = new sqlite3.Database(DB_PATH)
+
+const VOLUME_PATH = process.env.RAILWAY_VOLUME_MOUNT_PATH || '/data';
+const BACKUP_DIR = path.join(VOLUME_PATH, 'backups');
 
 db.serialize(() => {
   db.run(`CREATE TABLE IF NOT EXISTS users (
@@ -49,6 +56,22 @@ db.serialize(() => {
     match_id TEXT PRIMARY KEY,
     result TEXT
   )`);
+});
+
+// ========== MIGRACIONES (columnas nuevas) ==========
+db.serialize(() => {
+  db.run(`ALTER TABLE votes ADD COLUMN home_goals INTEGER`, (err) => {
+    if (err && !err.message.includes('duplicate column')) console.error(err);
+  });
+  db.run(`ALTER TABLE votes ADD COLUMN away_goals INTEGER`, (err) => {
+    if (err && !err.message.includes('duplicate column')) console.error(err);
+  });
+  db.run(`ALTER TABLE results ADD COLUMN home_goals INTEGER`, (err) => {
+    if (err && !err.message.includes('duplicate column')) console.error(err);
+  });
+  db.run(`ALTER TABLE results ADD COLUMN away_goals INTEGER`, (err) => {
+    if (err && !err.message.includes('duplicate column')) console.error(err);
+  });
 });
 
 // ========== VALIDADORES ==========
@@ -283,8 +306,17 @@ app.post('/api/matches/datetime', authMiddleware, (req, res) => {
 });
 
 app.post('/api/vote', authMiddleware, (req, res) => {
-  const { matchId, vote } = req.body;
-  if (!matchId || !['home', 'draw', 'away'].includes(vote)) {
+  const { matchId, vote, homeGoals, awayGoals } = req.body;
+
+  const hg = parseInt(homeGoals);
+  const ag = parseInt(awayGoals);
+  const tieneGoles = !isNaN(hg) && !isNaN(ag) && hg >= 0 && ag >= 0;
+  let finalVote = vote;
+  if (tieneGoles) {
+    finalVote = hg > ag ? 'home' : (hg < ag ? 'away' : 'draw');
+  }
+
+  if (!matchId || !['home', 'draw', 'away'].includes(finalVote)) {
     return res.status(400).json({ error: 'Voto inválido' });
   }
   db.get("SELECT match_datetime FROM matches WHERE id = ?", [matchId], (err, match) => {
@@ -295,8 +327,8 @@ app.post('/api/vote', authMiddleware, (req, res) => {
     db.get("SELECT id FROM votes WHERE user_id = ? AND match_id = ?",
       [req.userId, matchId], (err, existing) => {
         if (existing) return res.status(403).json({ error: 'Ya votaste en este partido' });
-        db.run("INSERT INTO votes (user_id, match_id, vote) VALUES (?, ?, ?)",
-          [req.userId, matchId, vote], function (err) {
+        db.run("INSERT INTO votes (user_id, match_id, vote, home_goals, away_goals) VALUES (?, ?, ?, ?, ?)",
+          [req.userId, matchId, finalVote, tieneGoles ? hg : null, tieneGoles ? ag : null], function (err) {
             if (err) return res.status(500).json({ error: 'Error al guardar voto' });
             res.json({ success: true });
           });
@@ -305,21 +337,24 @@ app.post('/api/vote', authMiddleware, (req, res) => {
 });
 
 app.get('/api/votes', authMiddleware, (req, res) => {
-  db.all("SELECT match_id, vote FROM votes WHERE user_id = ?", [req.userId], (err, rows) => {
+  db.all("SELECT match_id, vote, home_goals, away_goals FROM votes WHERE user_id = ?", [req.userId], (err, rows) => {
     if (err) return res.status(500).json({ error: 'Error' });
     const map = {};
-    rows.forEach(r => { map[r.match_id] = r.vote; });
+    rows.forEach(r => { map[r.match_id] = { vote: r.vote, homeGoals: r.home_goals, awayGoals: r.away_goals }; });
     res.json(map);
   });
 });
 
 app.get('/api/all-votes', authMiddleware, (req, res) => {
+  // Solo se devuelven votos de partidos cuyo match_datetime ya pasó —
+  // los pronósticos de otros jugadores deben permanecer ocultos hasta el cierre.
   db.all(`
-    SELECT u.id as user_id, u.name, v.match_id, v.vote,
+    SELECT u.id as user_id, u.name, v.match_id, v.vote, v.home_goals, v.away_goals,
            m.home, m.away, m.date, m.stage
     FROM votes v
     JOIN users u ON v.user_id = u.id
     JOIN matches m ON v.match_id = m.id
+    WHERE m.match_datetime < datetime('now')
     ORDER BY u.name, m.match_datetime
   `, (err, rows) => {
     if (err) return res.status(500).json({ error: 'Error' });
@@ -337,8 +372,18 @@ app.get('/api/export-data', authMiddleware, (req, res) => {
       m.away          AS visitante,
       m.stage         AS fase,
       v.vote          AS pronostico,
+      v.home_goals    AS pronostico_local,
+      v.away_goals    AS pronostico_visitante,
       r.result        AS resultado_real,
-      CASE WHEN v.vote = r.result THEN 1 ELSE 0 END AS puntos
+      r.home_goals    AS goles_local,
+      r.away_goals    AS goles_visitante,
+      CASE
+        WHEN r.result IS NULL THEN ''
+        WHEN v.home_goals IS NOT NULL AND r.home_goals IS NOT NULL
+             AND v.home_goals = r.home_goals AND v.away_goals = r.away_goals THEN 3
+        WHEN v.vote = r.result THEN 1
+        ELSE 0
+      END AS puntos
     FROM users u
     LEFT JOIN votes v ON u.id = v.user_id
     LEFT JOIN matches m ON v.match_id = m.id
@@ -347,10 +392,10 @@ app.get('/api/export-data', authMiddleware, (req, res) => {
     ORDER BY u.name, m.match_datetime
   `, (err, rows) => {
     if (err) return res.status(500).json({ error: 'Error' });
-    const campos = ['usuario', 'fecha', 'local', 'visitante', 'fase', 'pronostico', 'resultado_real', 'puntos'];
+    const campos = ['usuario', 'fecha', 'local', 'visitante', 'fase', 'pronostico', 'pronostico_local', 'pronostico_visitante', 'resultado_real', 'goles_local', 'goles_visitante', 'puntos'];
     let csv = '\uFEFF' + campos.join(',') + '\n'; // BOM para Excel
     rows.forEach(row => {
-      const fila = campos.map(c => `"${(row[c] || '').toString().replace(/"/g, '""')}"`).join(',');
+      const fila = campos.map(c => `"${(row[c] ?? '').toString().replace(/"/g, '""')}"`).join(',');
       csv += fila + '\n';
     });
     res.setHeader('Content-disposition', 'attachment; filename=porra_mundial2026.csv');
@@ -360,17 +405,17 @@ app.get('/api/export-data', authMiddleware, (req, res) => {
 });
 
 app.get('/api/results', authMiddleware, (req, res) => {
-  db.all('SELECT match_id, result FROM results', (err, rows) => {
+  db.all('SELECT match_id, result, home_goals, away_goals FROM results', (err, rows) => {
     if (err) return res.status(500).json({ error: 'Error' });
     const map = {};
-    rows.forEach(r => { map[r.match_id] = r.result; });
+    rows.forEach(r => { map[r.match_id] = { result: r.result, homeGoals: r.home_goals, awayGoals: r.away_goals }; });
     res.json(map);
   });
 });
 
 app.post('/api/results', authMiddleware, (req, res) => {
   if (!req.isAdmin) return res.status(403).json({ error: 'Solo admin' });
-  const { matchId, result } = req.body;
+  const { matchId, result, homeGoals, awayGoals } = req.body;
   if (!matchId) return res.status(400).json({ error: 'Falta matchId' });
   if (result !== null && !['home', 'draw', 'away'].includes(result)) {
     return res.status(400).json({ error: 'Resultado inválido' });
@@ -381,8 +426,10 @@ app.post('/api/results', authMiddleware, (req, res) => {
       res.json({ success: true });
     });
   } else {
-    db.run("INSERT OR REPLACE INTO results (match_id, result) VALUES (?, ?)",
-      [matchId, result], function (err) {
+    const hg = parseInt(homeGoals);
+    const ag = parseInt(awayGoals);
+    db.run("INSERT OR REPLACE INTO results (match_id, result, home_goals, away_goals) VALUES (?, ?, ?, ?)",
+      [matchId, result, isNaN(hg) ? null : hg, isNaN(ag) ? null : ag], function (err) {
         if (err) return res.status(500).json({ error: 'Error' });
         res.json({ success: true });
       });
@@ -392,13 +439,26 @@ app.post('/api/results', authMiddleware, (req, res) => {
 app.get('/api/leaderboard', authMiddleware, (req, res) => {
   db.all(`
     SELECT u.id, u.name,
-           COALESCE(SUM(CASE WHEN v.vote = r.result THEN 1 ELSE 0 END), 0) AS points
+      COALESCE(SUM(
+        CASE
+          WHEN r.result IS NULL THEN 0
+          WHEN v.home_goals IS NOT NULL AND r.home_goals IS NOT NULL
+               AND v.home_goals = r.home_goals AND v.away_goals = r.away_goals THEN 3
+          WHEN v.vote = r.result THEN 1
+          ELSE 0
+        END
+      ), 0) AS points,
+      COALESCE(SUM(CASE WHEN v.home_goals IS NOT NULL AND r.home_goals IS NOT NULL
+               AND v.home_goals = r.home_goals AND v.away_goals = r.away_goals THEN 1 ELSE 0 END), 0) AS exactos,
+      COALESCE(SUM(CASE WHEN r.result IS NOT NULL AND v.vote = r.result
+               AND NOT (v.home_goals IS NOT NULL AND r.home_goals IS NOT NULL
+               AND v.home_goals = r.home_goals AND v.away_goals = r.away_goals) THEN 1 ELSE 0 END), 0) AS aciertos
     FROM users u
     LEFT JOIN votes v ON u.id = v.user_id
     LEFT JOIN results r ON v.match_id = r.match_id
     WHERE u.is_admin = 0
     GROUP BY u.id
-    ORDER BY points DESC, u.name
+    ORDER BY points DESC, exactos DESC, u.name
   `, (err, rows) => {
     if (err) return res.status(500).json({ error: 'Error' });
     res.json(rows);
@@ -449,6 +509,125 @@ app.delete('/api/users/:id', authMiddleware, (req, res) => {
   });
 });
 
+// ========== SINCRONIZAR PARTIDOS (ELIMINATORIAS) ==========
+app.post('/api/admin/sync-matches', authMiddleware, async (req, res) => {
+  if (!req.isAdmin) return res.status(403).json({ error: 'Solo admin' });
+  try {
+    const respuesta = await fetch('https://cdn.jsdelivr.net/gh/openfootball/worldcup.json@master/2026/worldcup.json');
+    if (!respuesta.ok) throw new Error(`HTTP ${respuesta.status}`);
+    const datos = await respuesta.json();
+    const insert = db.prepare(`INSERT OR IGNORE INTO matches (id, date, home, away, stage, match_datetime) VALUES (?, ?, ?, ?, ?, ?)`);
+    let nuevos = 0;
+    for (const partido of datos.matches) {
+      const idPartido = `wc_${partido.date}_${partido.team1}_${partido.team2}`.replace(/\s/g, '_');
+      const fechaHora = `${partido.date}T${partido.time?.split(' ')[0] || '12:00'}:00`;
+      const fechaISO = new Date(fechaHora).toISOString();
+      insert.run(idPartido, partido.date, partido.team1, partido.team2,
+        partido.round || partido.group || "Fase de grupos", fechaISO,
+        function() { if (this.changes > 0) nuevos++; });
+    }
+    insert.finalize(() => {
+      res.json({ success: true, total: datos.matches.length, nuevos });
+    });
+  } catch (error) {
+    console.error("❌ Error sincronizando partidos:", error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ========== BACKUP / RESTORE ==========
+app.get('/api/admin/backup', authMiddleware, (req, res) => {
+  if (!req.isAdmin) return res.status(403).json({ error: 'Solo admin' });
+  const queries = {
+    users: "SELECT id, name, is_admin FROM users",
+    matches: "SELECT * FROM matches",
+    votes: "SELECT * FROM votes",
+    results: "SELECT * FROM results"
+  };
+  const backup = { timestamp: new Date().toISOString(), version: '3.0' };
+  let completed = 0;
+  const total = Object.keys(queries).length;
+  for (const [key, sql] of Object.entries(queries)) {
+    db.all(sql, (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      backup[key] = rows;
+      completed++;
+      if (completed === total) {
+        const fecha = new Date().toISOString().split('T')[0];
+        res.setHeader('Content-Disposition', `attachment; filename="backup_porra_${fecha}.json"`);
+        res.setHeader('Content-Type', 'application/json');
+        res.json(backup);
+      }
+    });
+  }
+});
+
+app.post('/api/admin/restore', authMiddleware, (req, res) => {
+  if (!req.isAdmin) return res.status(403).json({ error: 'Solo admin' });
+  const backup = req.body;
+  if (!backup || !backup.matches || !backup.votes || !backup.results) {
+    return res.status(400).json({ error: 'Formato de backup inválido' });
+  }
+  const insertados = { matches: 0, votes: 0, results: 0 };
+  db.serialize(() => {
+    if (backup.matches.length) {
+      const stmtM = db.prepare(`INSERT OR IGNORE INTO matches (id, date, home, away, stage, match_datetime) VALUES (?, ?, ?, ?, ?, ?)`);
+      for (const m of backup.matches) {
+        stmtM.run(m.id, m.date, m.home, m.away, m.stage, m.match_datetime, function() {
+          if (this.changes > 0) insertados.matches++;
+        });
+      }
+      stmtM.finalize();
+    }
+    if (backup.votes.length) {
+      const stmtV = db.prepare(`INSERT OR IGNORE INTO votes (user_id, match_id, vote, home_goals, away_goals, created_at) VALUES (?, ?, ?, ?, ?, ?)`);
+      for (const v of backup.votes) {
+        stmtV.run(v.user_id, v.match_id, v.vote, v.home_goals ?? null, v.away_goals ?? null, v.created_at, function() {
+          if (this.changes > 0) insertados.votes++;
+        });
+      }
+      stmtV.finalize();
+    }
+    if (backup.results.length) {
+      const stmtR = db.prepare(`INSERT OR IGNORE INTO results (match_id, result, home_goals, away_goals) VALUES (?, ?, ?, ?)`);
+      for (const r of backup.results) {
+        stmtR.run(r.match_id, r.result, r.home_goals ?? null, r.away_goals ?? null, function() {
+          if (this.changes > 0) insertados.results++;
+        });
+      }
+      stmtR.finalize();
+    }
+    res.json({ success: true, insertados });
+  });
+});
+
+// ========== BACKUP AUTOMÁTICO DIARIO ==========
+async function backupAutomatico() {
+  try {
+    if (!fs.existsSync(BACKUP_DIR)) {
+      fs.mkdirSync(BACKUP_DIR, { recursive: true });
+    }
+    const backup = { timestamp: new Date().toISOString(), version: '3.0' };
+    const tablas = ['users', 'matches', 'votes', 'results'];
+    for (const tabla of tablas) {
+      const sql = tabla === 'users' ? "SELECT id, name, is_admin FROM users" : `SELECT * FROM ${tabla}`;
+      backup[tabla] = await new Promise((resolve, reject) => {
+        db.all(sql, (err, rows) => err ? reject(err) : resolve(rows));
+      });
+    }
+    const fecha = new Date().toISOString().split('T')[0];
+    const ruta = path.join(BACKUP_DIR, `backup_porra_${fecha}.json`);
+    fs.writeFileSync(ruta, JSON.stringify(backup, null, 2));
+    console.log(`✅ Backup automático guardado: ${ruta}`);
+    const archivos = fs.readdirSync(BACKUP_DIR).filter(f => f.startsWith('backup_porra_')).sort();
+    while (archivos.length > 30) {
+      fs.unlinkSync(path.join(BACKUP_DIR, archivos.shift()));
+    }
+  } catch (error) {
+    console.error("❌ Error en backup automático:", error.message);
+  }
+}
+
 // Fallback SPA
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
@@ -460,6 +639,8 @@ cargarPartidosDesdeAPI()
   .then(() => {
     actualizarResultadosAutomaticos();
     setInterval(actualizarResultadosAutomaticos, 30 * 60 * 1000);
+    backupAutomatico();
+    setInterval(backupAutomatico, 24 * 60 * 60 * 1000);
   })
   .catch(console.error);
 
