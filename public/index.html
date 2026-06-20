@@ -944,16 +944,18 @@ function renderMatches() {
 
     const adminControls = currentUser.isAdmin ? `
       <div class="admin-controls">
-        ${!resultado
-          ? `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-               <span style="font-size:.78rem;">${esc(m.home)}</span>
-               <input class="form-input" type="number" min="0" max="20" id="rhg_${esc(m.id)}" style="width:48px;text-align:center;padding:5px;" placeholder="0">
-               <span>-</span>
-               <input class="form-input" type="number" min="0" max="20" id="rag_${esc(m.id)}" style="width:48px;text-align:center;padding:5px;" placeholder="0">
-               <span style="font-size:.78rem;">${esc(m.away)}</span>
-               <button class="btn-admin" data-action="resultscore" data-id="${esc(m.id)}">✅ Registrar</button>
-             </div>`
-          : `<button class="btn-admin danger" data-action="clear" data-id="${esc(m.id)}">🗑️ Borrar resultado</button>`}
+        ${resultado
+          ? `<button class="btn-admin danger" data-action="clear" data-id="${esc(m.id)}">🗑️ Borrar resultado</button>`
+          : closed
+            ? `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                 <span style="font-size:.78rem;">${esc(m.home)}</span>
+                 <input class="form-input" type="number" min="0" max="20" id="rhg_${esc(m.id)}" style="width:48px;text-align:center;padding:5px;" placeholder="0">
+                 <span>-</span>
+                 <input class="form-input" type="number" min="0" max="20" id="rag_${esc(m.id)}" style="width:48px;text-align:center;padding:5px;" placeholder="0">
+                 <span style="font-size:.78rem;">${esc(m.away)}</span>
+                 <button class="btn-admin" data-action="resultscore" data-id="${esc(m.id)}">✅ Registrar</button>
+               </div>`
+            : `<span style="font-size:.75rem; color:var(--text-muted);">⏳ Disponible cuando cierre la votación</span>`}
         <button class="btn-admin" data-action="editdate" data-id="${esc(m.id)}" data-datetime="${esc(m.match_datetime)}">📅 Cierre</button>
       </div>
     ` : '';

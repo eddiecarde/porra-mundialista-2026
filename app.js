@@ -425,7 +425,13 @@ app.post('/api/results', authMiddleware, (req, res) => {
       if (err) return res.status(500).json({ error: 'Error' });
       res.json({ success: true });
     });
-  } else {
+    return;
+  }
+  db.get("SELECT match_datetime FROM matches WHERE id = ?", [matchId], (err, match) => {
+    if (err || !match) return res.status(404).json({ error: 'Partido no existe' });
+    if (new Date() < new Date(match.match_datetime)) {
+      return res.status(403).json({ error: 'No se puede registrar el resultado: la votación de este partido aún no ha cerrado' });
+    }
     const hg = parseInt(homeGoals);
     const ag = parseInt(awayGoals);
     db.run("INSERT OR REPLACE INTO results (match_id, result, home_goals, away_goals) VALUES (?, ?, ?, ?)",
@@ -433,7 +439,7 @@ app.post('/api/results', authMiddleware, (req, res) => {
         if (err) return res.status(500).json({ error: 'Error' });
         res.json({ success: true });
       });
-  }
+  });
 });
 
 app.get('/api/leaderboard', authMiddleware, (req, res) => {
