@@ -129,6 +129,28 @@ const crearAdminPorDefecto = async () => {
 };
 
 // ========== CARGAR PARTIDOS ==========
+// Genera un ID estable para un partido de la fuente OpenFootball.
+// Los partidos de eliminatorias (con campo "num") usan placeholders como
+// equipo ("1I", "3C/D/F/G/H") hasta que se conocen los equipos reales.
+// Si el ID dependiera de los nombres de equipo, cada vez que se resuelve
+// un placeholder ("1I" -> "Morocco") se generaría un ID distinto y
+// quedaría un partido duplicado/huérfano en la BD. Por eso los partidos
+// con "num" usan ese identificador estable (no cambia aunque cambien los
+// nombres). Los partidos de fase de grupos no tienen "num" y sus equipos
+// nunca son placeholders, así que mantienen el esquema anterior.
+function generarIdPartido(partido) {
+  if (partido.num !== undefined && partido.num !== null) {
+    return `wc_num_${partido.num}`;
+  }
+  return `wc_${partido.date}_${partido.team1}_${partido.team2}`.replace(/\s/g, '_');
+}
+
+// Detecta si un nombre de equipo es un placeholder sin resolver
+// (ej. "1I", "2J", "3C/D/F/G/H") en vez de un país real.
+function esPlaceholderEquipo(nombre) {
+  return typeof nombre === 'string' && /^\d+[A-Z](\/[A-Z])*$/.test(nombre.trim());
+}
+
 async function cargarPartidosDesdeAPI() {
   return new Promise((resolve, reject) => {
     db.get("SELECT COUNT(*) as count FROM matches", async (err, row) => {
@@ -145,7 +167,7 @@ async function cargarPartidosDesdeAPI() {
         const insert = db.prepare(`INSERT OR IGNORE INTO matches (id, date, home, away, stage, match_datetime) VALUES (?, ?, ?, ?, ?, ?)`);
         let count = 0;
         for (const partido of datos.matches) {
-          const idPartido = `wc_${partido.date}_${partido.team1}_${partido.team2}`.replace(/\s/g, '_');
+          const idPartido = generarIdPartido(partido);
           const fechaHora = `${partido.date}T${partido.time?.split(' ')[0] || '12:00'}:00`;
           const fechaISO = new Date(fechaHora).toISOString();
           insert.run(idPartido, partido.date, partido.team1, partido.team2,
@@ -527,22 +549,79 @@ app.post('/api/admin/sync-matches', authMiddleware, async (req, res) => {
     if (!respuesta.ok) throw new Error(`HTTP ${respuesta.status}`);
     const datos = await respuesta.json();
     const insert = db.prepare(`INSERT OR IGNORE INTO matches (id, date, home, away, stage, match_datetime) VALUES (?, ?, ?, ?, ?, ?)`);
+    const update = db.prepare(`UPDATE matches SET home = ?, away = ?, stage = ? WHERE id = ? AND (home != ? OR away != ? OR stage != ?)`);
     let nuevos = 0;
+    let actualizados = 0;
     for (const partido of datos.matches) {
-      const idPartido = `wc_${partido.date}_${partido.team1}_${partido.team2}`.replace(/\s/g, '_');
+      const idPartido = generarIdPartido(partido);
       const fechaHora = `${partido.date}T${partido.time?.split(' ')[0] || '12:00'}:00`;
       const fechaISO = new Date(fechaHora).toISOString();
-      insert.run(idPartido, partido.date, partido.team1, partido.team2,
-        partido.round || partido.group || "Fase de grupos", fechaISO,
+      const stage = partido.round || partido.group || "Fase de grupos";
+      insert.run(idPartido, partido.date, partido.team1, partido.team2, stage, fechaISO,
         function() { if (this.changes > 0) nuevos++; });
+      // Si el partido ya existía (ej. de eliminatorias con placeholder resuelto),
+      // actualiza los nombres de equipo sin tocar votos ni resultados.
+      update.run(partido.team1, partido.team2, stage, idPartido, partido.team1, partido.team2, stage,
+        function() { if (this.changes > 0) actualizados++; });
     }
-    insert.finalize(() => {
-      res.json({ success: true, total: datos.matches.length, nuevos });
+    insert.finalize();
+    update.finalize(() => {
+      res.json({ success: true, total: datos.matches.length, nuevos, actualizados });
     });
   } catch (error) {
     console.error("❌ Error sincronizando partidos:", error.message);
     res.status(500).json({ error: error.message });
   }
+});
+
+// ========== LIMPIAR PARTIDOS DUPLICADOS (placeholders huérfanos) ==========
+// Antes de este arreglo, los partidos de eliminatorias usaban un ID basado
+// en los nombres de equipo. Cuando un placeholder ("1I") se resolvía a un
+// equipo real ("Morocco"), se generaba un partido NUEVO en vez de actualizar
+// el existente, dejando el placeholder viejo huérfano en la BD. Este
+// endpoint detecta esos huérfanos (partidos de eliminatorias con ID viejo,
+// es decir que no usan el esquema estable "wc_num_") y los borra SOLO SI no
+// tienen votos ni resultados asociados. Si tienen votos, se reportan para
+// revisión manual y NO se tocan.
+function esFaseDeGrupos(stage) {
+  return /^Matchday/i.test(stage || '') || stage === 'Fase de grupos';
+}
+
+app.post('/api/admin/cleanup-duplicate-matches', authMiddleware, (req, res) => {
+  if (!req.isAdmin) return res.status(403).json({ error: 'Solo admin' });
+  db.all('SELECT id, date, home, away, stage FROM matches', (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+    const candidatos = rows.filter(m => !m.id.startsWith('wc_num_') && !esFaseDeGrupos(m.stage));
+    if (!candidatos.length) {
+      return res.json({ eliminados: [], pendientesRevision: [] });
+    }
+    const eliminados = [];
+    const pendientesRevision = [];
+    let procesados = 0;
+    candidatos.forEach(m => {
+      db.get('SELECT COUNT(*) as c FROM votes WHERE match_id = ?', [m.id], (err, votosRow) => {
+        db.get('SELECT COUNT(*) as c FROM results WHERE match_id = ?', [m.id], (err2, resultRow) => {
+          const tieneVotos = (votosRow?.c || 0) > 0;
+          const tieneResultado = (resultRow?.c || 0) > 0;
+          if (!tieneVotos && !tieneResultado) {
+            db.run('DELETE FROM matches WHERE id = ?', [m.id], () => {
+              eliminados.push({ id: m.id, home: m.home, away: m.away, date: m.date });
+              procesados++;
+              if (procesados === candidatos.length) {
+                res.json({ eliminados, pendientesRevision });
+              }
+            });
+          } else {
+            pendientesRevision.push({ id: m.id, home: m.home, away: m.away, date: m.date, votos: votosRow?.c || 0, resultados: resultRow?.c || 0 });
+            procesados++;
+            if (procesados === candidatos.length) {
+              res.json({ eliminados, pendientesRevision });
+            }
+          }
+        });
+      });
+    });
+  });
 });
 
 // ========== BACKUP / RESTORE ==========

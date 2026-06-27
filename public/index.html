@@ -601,9 +601,13 @@
       <!-- Sincronizar partidos -->
       <div class="admin-section">
         <h3>🔄 Sincronizar partidos</h3>
-        <p style="font-size:.83rem; color:var(--text-muted); margin-bottom:16px; line-height:1.5;">Vuelve a consultar el calendario y agrega solo los partidos nuevos (eliminatorias), sin tocar los existentes.</p>
+        <p style="font-size:.83rem; color:var(--text-muted); margin-bottom:16px; line-height:1.5;">Vuelve a consultar el calendario y agrega solo los partidos nuevos (eliminatorias), actualizando los equipos de cruces ya resueltos sin tocar votos ni resultados.</p>
         <button class="btn-secondary" id="syncMatchesBtn">🔄 Sincronizar partidos</button>
         <p id="syncResult" style="font-size:.78rem; color:var(--text-muted); margin-top:10px;"></p>
+        <hr style="border-color:var(--border); margin:16px 0;">
+        <p style="font-size:.83rem; color:var(--text-muted); margin-bottom:16px; line-height:1.5;">Si quedaron partidos placeholder duplicados (ej. de antes de este arreglo), esto los detecta y borra solo si NO tienen votos ni resultados.</p>
+        <button class="btn-secondary" id="cleanupDuplicatesBtn">🧹 Limpiar partidos duplicados</button>
+        <div id="cleanupResult" style="font-size:.78rem; color:var(--text-muted); margin-top:10px;"></div>
       </div>
       <!-- Backup -->
       <div class="admin-section">
@@ -1199,12 +1203,38 @@ document.getElementById('syncMatchesBtn').onclick = async () => {
   btn.disabled = false; btn.textContent = '🔄 Sincronizar partidos';
   if (res && res.ok) {
     const data = await res.json();
-    document.getElementById('syncResult').textContent = `✅ ${data.nuevos} partidos nuevos agregados (${data.total} en total en la API)`;
+    document.getElementById('syncResult').textContent = `✅ ${data.nuevos} partidos nuevos, ${data.actualizados || 0} actualizados (${data.total} en total en la API)`;
     toast(`${data.nuevos} partidos nuevos agregados`);
     cargarTodo();
   } else {
     document.getElementById('syncResult').textContent = '❌ Error al sincronizar';
     toast('Error al sincronizar partidos', 'error');
+  }
+};
+
+document.getElementById('cleanupDuplicatesBtn').onclick = async () => {
+  if (!confirm('Esto borrará partidos placeholder duplicados que NO tengan votos ni resultados. ¿Continuar?')) return;
+  const btn = document.getElementById('cleanupDuplicatesBtn');
+  btn.disabled = true; btn.textContent = '⏳ Buscando duplicados...';
+  const res = await apiCall('/api/admin/cleanup-duplicate-matches', { method: 'POST' });
+  btn.disabled = false; btn.textContent = '🧹 Limpiar partidos duplicados';
+  const resultEl = document.getElementById('cleanupResult');
+  if (res && res.ok) {
+    const data = await res.json();
+    let html = `✅ ${data.eliminados.length} partido(s) duplicado(s) eliminado(s)`;
+    if (data.eliminados.length) {
+      html += '<ul style="margin:6px 0 0 16px;">' + data.eliminados.map(m => `<li>${esc(m.home)} vs ${esc(m.away)} (${esc(m.date)})</li>`).join('') + '</ul>';
+    }
+    if (data.pendientesRevision.length) {
+      html += `<div style="margin-top:10px; color:#F08080;">⚠️ ${data.pendientesRevision.length} duplicado(s) con votos/resultados NO se borraron (revisión manual):</div>`;
+      html += '<ul style="margin:6px 0 0 16px;">' + data.pendientesRevision.map(m => `<li>${esc(m.home)} vs ${esc(m.away)} (${esc(m.date)}) — ${m.votos} votos, ${m.resultados} resultados</li>`).join('') + '</ul>';
+    }
+    resultEl.innerHTML = html;
+    toast(`${data.eliminados.length} duplicado(s) eliminado(s)`);
+    cargarTodo();
+  } else {
+    resultEl.textContent = '❌ Error al limpiar duplicados';
+    toast('Error al limpiar duplicados', 'error');
   }
 };
 
