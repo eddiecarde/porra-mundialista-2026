@@ -624,6 +624,97 @@ app.post('/api/admin/cleanup-duplicate-matches', authMiddleware, (req, res) => {
   });
 });
 
+// ========== FUSIONAR PARTIDO DUPLICADO CON VOTOS ==========
+// Para duplicados que SÍ tienen votos (los que cleanup-duplicate-matches no
+// borra). Mueve los votos/resultados del partido viejo (fromId) al partido
+// correcto (toId). Si un usuario ya votó en ambos:
+//   - mismo valor en los dos -> se descarta el voto viejo (no hay pérdida real)
+//   - valores distintos -> se conserva el voto en toId (el más reciente,
+//     el que el usuario ve actualmente) y se descarta el de fromId, reportando
+//     el conflicto para que el admin lo revise.
+// Al final, si fromId quedó sin votos ni resultados, se borra ese partido.
+app.post('/api/admin/merge-match', authMiddleware, (req, res) => {
+  if (!req.isAdmin) return res.status(403).json({ error: 'Solo admin' });
+  const { fromId, toId } = req.body;
+  if (!fromId || !toId || fromId === toId) {
+    return res.status(400).json({ error: 'fromId y toId son requeridos y deben ser distintos' });
+  }
+  db.all('SELECT id FROM matches WHERE id IN (?, ?)', [fromId, toId], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (rows.length !== 2) return res.status(404).json({ error: 'fromId o toId no existen' });
+
+    db.all('SELECT * FROM votes WHERE match_id = ?', [fromId], (err, votosViejos) => {
+      if (err) return res.status(500).json({ error: err.message });
+      db.all('SELECT * FROM votes WHERE match_id = ?', [toId], (err, votosNuevos) => {
+        if (err) return res.status(500).json({ error: err.message });
+        const votosNuevosPorUsuario = new Map(votosNuevos.map(v => [v.user_id, v]));
+        const migrados = [];
+        const conflictos = [];
+        let pendientes = votosViejos.length;
+
+        const finalizarResultados = () => {
+          // Migrar resultado si fromId tiene uno y toId no.
+          db.get('SELECT * FROM results WHERE match_id = ?', [fromId], (err, resViejo) => {
+            db.get('SELECT * FROM results WHERE match_id = ?', [toId], (err2, resNuevo) => {
+              const seguirConLimpieza = () => {
+                db.get('SELECT COUNT(*) as c FROM votes WHERE match_id = ?', [fromId], (err, vc) => {
+                  db.get('SELECT COUNT(*) as c FROM results WHERE match_id = ?', [fromId], (err2, rc) => {
+                    const quedaronVotos = (vc?.c || 0) > 0;
+                    const quedaronResultados = (rc?.c || 0) > 0;
+                    if (!quedaronVotos && !quedaronResultados) {
+                      db.run('DELETE FROM matches WHERE id = ?', [fromId], () => {
+                        res.json({ migrados, conflictos, partidoViejoEliminado: true });
+                      });
+                    } else {
+                      res.json({ migrados, conflictos, partidoViejoEliminado: false });
+                    }
+                  });
+                });
+              };
+              if (resViejo && !resNuevo) {
+                db.run('INSERT INTO results (match_id, result, home_goals, away_goals) VALUES (?, ?, ?, ?)',
+                  [toId, resViejo.result, resViejo.home_goals, resViejo.away_goals], () => {
+                    db.run('DELETE FROM results WHERE match_id = ?', [fromId], seguirConLimpieza);
+                  });
+              } else if (resViejo && resNuevo) {
+                // toId ya tiene resultado propio; se descarta el de fromId sin pisar el de toId.
+                db.run('DELETE FROM results WHERE match_id = ?', [fromId], seguirConLimpieza);
+              } else {
+                seguirConLimpieza();
+              }
+            });
+          });
+        };
+
+        if (!votosViejos.length) return finalizarResultados();
+
+        votosViejos.forEach(vViejo => {
+          const vNuevo = votosNuevosPorUsuario.get(vViejo.user_id);
+          if (!vNuevo) {
+            // Sin conflicto: mover el voto al partido correcto.
+            db.run('UPDATE votes SET match_id = ? WHERE id = ?', [toId, vViejo.id], () => {
+              migrados.push({ userId: vViejo.user_id, vote: vViejo.vote });
+              if (--pendientes === 0) finalizarResultados();
+            });
+          } else if (vNuevo.vote === vViejo.vote) {
+            // Mismo voto en ambos: descartar el viejo, no hay pérdida de información.
+            db.run('DELETE FROM votes WHERE id = ?', [vViejo.id], () => {
+              migrados.push({ userId: vViejo.user_id, vote: vViejo.vote, duplicadoIdentico: true });
+              if (--pendientes === 0) finalizarResultados();
+            });
+          } else {
+            // Conflicto real: se conserva el voto vigente en toId, se descarta el de fromId.
+            db.run('DELETE FROM votes WHERE id = ?', [vViejo.id], () => {
+              conflictos.push({ userId: vViejo.user_id, votoDescartado: vViejo.vote, votoConservado: vNuevo.vote });
+              if (--pendientes === 0) finalizarResultados();
+            });
+          }
+        });
+      });
+    });
+  });
+});
+
 // ========== BACKUP / RESTORE ==========
 app.get('/api/admin/backup', authMiddleware, (req, res) => {
   if (!req.isAdmin) return res.status(403).json({ error: 'Solo admin' });
